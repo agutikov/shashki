@@ -78,7 +78,7 @@ So I propose another set of methods (callbacks):
 While there are always two sides in game and board is symmetric and rules are symmetric
 then there is a possibility to avoid handling of "active player"
 and replace it with board rotation function.
-And just track the color of current "active" side.
+And just track the color of current "active" side as simple as just (current_depth % 2).
 It seems more useful, easy to implement and convinient in general.
 
 
@@ -89,7 +89,7 @@ there are two available ways to do it:
 - Depth-first search with limited depth
 - Breadth-first search
 
-Additionally I see an option of cache the mapping of board states to set of consequent board states.
+Additionally I see an option of cache the mapping of board states to set of subsequent board states.
 There can be:
 - no cache
 - dedicateed cache for each thread
@@ -101,6 +101,14 @@ DFS should have cycle detection and/or depth limit.
 BFS depth is limited by memory.
 
 DFS is preferred for performance benchmarking of state-calculating algorythm, while it's memory consumption is low.
+
+### Winning and draws
+
+Rules define wins and draws for human players.
+From the perspective of engine there are next 3 different variants of game branch termination:
+- current side has no possible moves - it lost, the opposite side - wins;
+- loop detected - this board state was already processed
+- depth limit
 
 
 ## Unit-tests
@@ -169,6 +177,8 @@ Possible set of states:
   - total = (number of 32-bit itegers with 24 bits set) * (number of 24 bits integers with 12 bits set).
 
 I have no idea if it is possible to guarantee conversion is isomorphic for all states.
+But it seems that this requirement will be met if each item will be processed separately,
+and will not have theoretical possibility to iterfer with each other during conversion.
 
 
 ### SMT

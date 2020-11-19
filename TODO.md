@@ -1,6 +1,6 @@
 
 
-
+0. cmdline
 1. Cache of processed states for detecting loops
 2. Multithreaded DFS
 3. Cleanup, types, conversions, TODOs

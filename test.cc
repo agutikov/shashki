@@ -6,7 +6,10 @@
 #include <algorithm>
 #include <tuple>
 #include <stack>
+#include <chrono>
 
+using namespace std::literals::chrono_literals;
+using Clock = std::chrono::steady_clock;
 
 
 typedef std::pair<int, int> X_t;
@@ -376,7 +379,7 @@ void print(const board_state_t& s)
     const char* cols = "     a     b     c     d     e     f     g     h     ";
     const char* line = "  -------------------------------------------------  ";
     int row = 8;
-    printf("\n%s\n%s\n", cols, line);
+    printf("%s\n%s\n", cols, line);
     for (const auto& f : format_table) {
         printf("%d |", row);
         for (int i : f) {
@@ -710,19 +713,53 @@ private:
 // - paths depth total histogram
 // - paths depth histogram per win/lose/draw/unfinished
 // - number of items, number of kings, number of items+kings: 3 histograms per depth
+// - cache stats: hits, ...
 
-//TODO: measure time
-//TODO: Optimize DFS - avoid usage heap, go recursive, compare performance
-void DFS(board_state_t brd, size_t max_depth, bool verbose = true)
+//TODO: embed stats into generator?
+struct stats
 {
     size_t total_boards = 0;
+    std::vector<size_t> level_width_hist;
+
+    void consume_level_width(size_t w)
+    {
+        if (w >= level_width_hist.size()) {
+            level_width_hist.resize(w + 2, 0);
+        }
+        level_width_hist[w]++;
+    }
+
+    void print()
+    {
+        printf("\ntotal boards: %lu\n\n", total_boards);
+
+        printf("level width histogram:\n");
+        for (int w = 0; w < level_width_hist.size(); w++) {
+            printf("%2d: %lu\n", w, level_width_hist[w]);
+        }
+        printf("\n");
+    }
+};
+
+//TODO: Optimize DFS - avoid using heap, compare performance
+void DFS(board_state_t brd, size_t max_depth, bool verbose = true, Clock::duration timeout = 1h)
+{
+    auto started = Clock::now();
+
+    stats sts;
+
+    //TODO: generator without output buffer - only game logic
+    //TODO: wrap it with buffer provider
+    //TODO: wrap it with stats collector
 
     board_states_generator g;
     std::stack<std::pair<size_t, std::vector<board_state_t>>> stack;
     size_t sti = 0;
 
+    printf("  Initial board:\n");
     print(brd);
     auto v = g.gen_next_states(brd);
+    sts.consume_level_width(v.size());
     if (v.size() > 0) {
         stack.emplace(sti, std::move(v));
         sti = 0;
@@ -730,26 +767,34 @@ void DFS(board_state_t brd, size_t max_depth, bool verbose = true)
         return;
     }
 
-    while (stack.size() > 0) {
+    bool running = true;
+
+    while (stack.size() > 0 && running) {
         if (sti < stack.top().second.size()) {
             brd = stack.top().second[sti];
 
-            total_boards++;
+            sts.total_boards++;
             if (verbose) {
-                printf("\n  depth: %lu; branch: %lu; total boards: %lu\n", stack.size(), sti, total_boards);
+                printf("\n  depth: %lu; branch: %lu; total boards: %lu\n", stack.size(), sti, sts.total_boards);
                 if (stack.size() % 2 == 0) {
                     print(rotate(brd));
                 } else {
                     print(brd);
                 }
-            } else if (total_boards % 10000000 == 0) {
-                printf("total boards: %lu\n", total_boards);
+            } else if (sts.total_boards % 20000000 == 0) {
+                printf("total boards: %lu\n", sts.total_boards);
+                running = Clock::now() < (started + timeout);
+                if (!running) {
+                    printf("Timeout.\n");
+                    break;
+                }
             }
 
             sti++;
 
             if (stack.size() < max_depth) {
                 auto v = g.gen_next_states(rotate(brd));
+                sts.consume_level_width(v.size());
                 if (v.size() > 0) {
                     stack.emplace(sti, std::move(v));
                     sti = 0;
@@ -761,14 +806,29 @@ void DFS(board_state_t brd, size_t max_depth, bool verbose = true)
         }
     }
 
-    printf("total boards: %lu\n", total_boards);
+    sts.print();
 }
 
 
 
+// Recursive DFS with heap vector is slightly slower
+size_t DFSr(board_state_t brd, size_t max_depth)
+{
+    max_depth--;
+    board_states_generator g;
+    auto v = g.gen_next_states(brd);
+    size_t brd_count = v.size();
+    if (v.size() > 0 && max_depth > 0) {
+        for (auto next_brd : v) {
+            brd_count += DFSr(rotate(next_brd), max_depth);
+        }
+    }
+    return brd_count;
+}
 
 
 
+const board_state_t initial_board = {board_side_t{0, 0x0FFF}, board_side_t{0, 0xFFF00000}};
 
 void debug_step(board_state_t brd)
 {
@@ -925,14 +985,14 @@ void debug()
     print(brd);
     print(rotate(brd));
 
-    debug_step({board_side_t{0, 0x0FFF}, board_side_t{0, 0xFFF00000}});
+    debug_step(initial_board);
     printf("\n\n\n");
 
     debug_step({board_side_t{0, 0x00002000}, board_side_t{0, 0x00040000}});
     printf("\n\n\n");
 
     printf("==================================================================\n");
-    debug_depth({board_side_t{0, 0x0FFF}, board_side_t{0, 0xFFF00000}}, 100);
+    debug_depth(initial_board, 100);
 }
 
 #if 0
@@ -1058,8 +1118,9 @@ int main()
     //calc_all();
 
 
-    DFS({board_side_t{0, 0x0FFF}, board_side_t{0, 0xFFF00000}}, 12, false);
-
+    DFS(initial_board, 13, false, 100s);
+    //size_t total_boards = DFSr(initial_board, 12);
+    //printf("total boards: %lu\n", total_boards);
 
     return 0;
 }
