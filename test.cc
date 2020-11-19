@@ -127,7 +127,8 @@ constexpr auto product(const std::array<int, L>& x)
     return r;
 }
 
-const std::array<X_t, 2> forward_moves{X_t{-1,  1}, X_t{1,  1}};
+const std::array<X_t, 2> fwd_directions{X_t{-1,  1}, X_t{1,  1}};
+const std::array<X_t, 4> all_directions = product(std::array<int, 2>{-1, 1});
 
 const std::array<X_t, 4> short_captures_dst = product(std::array<int, 2>{-2, 2});
 const std::array<X_t, 4> short_captures = product(std::array<int, 2>{-1, 1});
@@ -161,7 +162,9 @@ constexpr auto product(const std::array<X_t, L1>& x, const std::array<int, L2>& 
     return r;
 }
 
-const std::array<X_t, 28> long_moves = product(product(std::array<int, 2>{-1, 1}), std::array<int, 7>{1, 2, 3, 4, 5, 6, 7});
+const std::array<X_t, 28> long_moves = product(all_directions, std::array<int, 7>{1, 2, 3, 4, 5, 6, 7});
+const std::array<X_t, 24> long_captures = product(all_directions, std::array<int, 6>{1, 2, 3, 4, 5, 6});
+const std::array<X_t, 24> long_jumps = product(all_directions, std::array<int, 6>{2, 3, 4, 5, 6, 7});
 
 template<size_t L>
 constexpr auto moves_mask(const std::array<X_t, L>& moves)
@@ -181,12 +184,12 @@ constexpr auto moves_mask(const std::array<X_t, L>& moves)
 template<size_t L>
 constexpr auto gen_captures(const std::array<X_t, L>& moves, const std::array<X_t, L>& captures)
 {
-    std::array<std::array<std::tuple<uint32_t, uint32_t, int>, L>, 32> r{{std::tuple<uint32_t, uint32_t, int>{0,0,0}}};
+    std::array<std::array<std::pair<uint32_t, int>, L>, 32> r{{std::pair<uint32_t, int>{0,0}}};
 
     for (int index = 0; index < 32; index++) {
         auto x = index2pos(index);
         auto& out_a = r[index];
-        out_a.fill({0,0,0});
+        out_a.fill({0,0});
 
         std::array<std::pair<X_t, X_t>, L> zip;
         std::transform(moves.begin(), moves.end(), captures.begin(), zip.begin(),
@@ -200,7 +203,7 @@ constexpr auto gen_captures(const std::array<X_t, L>& moves, const std::array<X_
             X_t dst = x + p.first;
             X_t cap = x + p.second;
             if (is_valid(dst)) {
-                out_a[i++] = std::tuple<uint32_t, uint32_t, int>(pos2bitmap(dst), pos2bitmap(cap), pos2index(dst));
+                out_a[i++] = std::pair<uint32_t, int>(pos2bitmap(cap), pos2index(dst));
             }
         }
     }
@@ -223,15 +226,88 @@ constexpr auto gen_king_moves()
     for (int index = 0; index < 32; index++) {
         auto x = index2pos(index);
         auto& out_a = r[index];
+
         for (size_t dir = 0; dir < 4; dir++){
             auto& out_dir = out_a[dir];
             out_dir.fill(0);
+
             const auto& dir_moves = moves[dir];
             int i = 0;
             for (auto move : dir_moves) {
-                auto z = x + move;
-                if (is_valid(z)) {
-                    out_dir[i++] = pos2bitmap(z);
+                auto dst = x + move;
+                if (is_valid(dst)) {
+                    out_dir[i++] = pos2bitmap(dst);
+                }
+            }
+        }
+    }
+
+    return r;
+}
+
+constexpr auto gen_king_captures()
+{
+    std::array<std::array<std::array<std::pair<uint32_t, std::array<int, 6>>, 6>, 4>, 32>
+    r{{{std::pair<uint32_t, std::array<int, 6>>{0, {-1}}}}};
+
+    const auto c6 = std::array<int, 6>{1, 2, 3, 4, 5, 6};
+    const auto m6 = std::array<int, 6>{2, 3, 4, 5, 6, 7};
+
+    const std::array<std::array<X_t, 6>, 4> captures = {
+        product(std::array<X_t, 1>{X_t{-1, -1}}, c6),
+        product(std::array<X_t, 1>{X_t{ 1, -1}}, c6),
+        product(std::array<X_t, 1>{X_t{-1,  1}}, c6),
+        product(std::array<X_t, 1>{X_t{ 1,  1}}, c6),
+    };
+    const std::array<std::array<X_t, 6>, 4> minimal_moves = {
+        product(std::array<X_t, 1>{X_t{-1, -1}}, m6),
+        product(std::array<X_t, 1>{X_t{ 1, -1}}, m6),
+        product(std::array<X_t, 1>{X_t{-1,  1}}, m6),
+        product(std::array<X_t, 1>{X_t{ 1,  1}}, m6),
+    };
+
+    std::array<std::array<std::pair<X_t, X_t>, 6>, 4> zip;
+    for (int i = 0; i < 4; i++) {
+        std::transform(minimal_moves[i].begin(), minimal_moves[i].end(), captures[i].begin(), zip[i].begin(),
+            [] (auto aa, auto bb) {
+                return std::pair<X_t, X_t>(aa, bb);
+            }
+        );
+    }
+
+    // for every item position
+    for (int index = 0; index < 32; index++) {
+        auto x = index2pos(index);
+        auto& out_a = r[index];
+
+        // for every directon from this position
+        for (size_t dir = 0; dir < 4; dir++){
+            auto& out_dir = out_a[dir];
+            out_dir.fill(std::pair<uint32_t, std::array<int, 6>>{0, {-1}});
+
+            const auto& dir_zip = zip[dir];
+
+            // fill possible captures for this direction
+            int c_i = 0;
+            for (int c_index = 0; c_index < dir_zip.size(); c_index++) {
+                auto c = dir_zip[c_index];
+                auto capture = x + c.second;
+                auto min_dst = x + c.first;
+                if (is_valid(min_dst)) {
+                    out_dir[c_i] = std::pair<uint32_t, std::array<int, 6>>{pos2bitmap(capture), {-1}};
+                    out_dir[c_i].second.fill(-1);
+
+                    // and fill possible jump destinations for this capture
+                    int j_i = 0;
+                    for (int j_index = c_index; j_index < dir_zip.size(); j_index++) {
+                        auto j = dir_zip[j_index];
+                        auto dst = x + j.first;
+                        if (is_valid(dst)) {
+                            out_dir[c_i].second[j_i++] = pos2index(dst);
+                        }
+                    }
+
+                    c_i++;
                 }
             }
         }
@@ -242,16 +318,25 @@ constexpr auto gen_king_moves()
 
 const struct tables_t
 {
-    std::array<std::array<uint32_t, 2>, 32> fwd_moves = gen_moves<2>(forward_moves);
-    std::array<uint32_t, 32> fwd_move_masks = moves_mask<2>(forward_moves);
+    //TODO: RENAME
 
-    // first is move, second is capture, third is move destination index
-    std::array<std::array<std::tuple<uint32_t, uint32_t, int>, 4>, 32> captures = gen_captures<4>(short_captures_dst, short_captures);
+    std::array<std::array<uint32_t, 2>, 32> fwd_moves = gen_moves<2>(fwd_directions);
+    std::array<uint32_t, 32> fwd_move_masks = moves_mask<2>(fwd_directions);
+
+    // first is capture, second is move destination index
+    std::array<std::array<std::pair<uint32_t, int>, 4>, 32> captures = gen_captures<4>(short_captures_dst, short_captures);
     std::array<uint32_t, 32> capture_move_masks = moves_mask<4>(short_captures_dst);
     std::array<uint32_t, 32> capture_masks = moves_mask<4>(short_captures);
 
     std::array<std::array<std::array<uint32_t, 7>, 4>, 32> king_moves = gen_king_moves();
     std::array<uint32_t, 32> king_move_masks = moves_mask<28>(long_moves);
+
+    // item index -> 4 directions -> list of pairs (capture mask, list of possible jump destination indexes)
+    std::array<std::array<std::array<std::pair<uint32_t, std::array<int, 6>>, 6>, 4>, 32>
+    king_captures = gen_king_captures();
+    std::array<uint32_t, 32> king_capture_move_masks = moves_mask<24>(long_jumps);
+    std::array<uint32_t, 32> king_capture_masks = moves_mask<24>(long_captures);
+
 } tables;
 
 
@@ -293,7 +378,7 @@ void print(const board_state_t& s)
                 uint32_t mask = index2bitmap(i);
                 const char* c = s.sides[0].kings & mask ? " (O) " :
                          s.sides[0].items & mask ? "  o  " :
-                         s.sides[1].kings & mask ? " }x{ " :
+                         s.sides[1].kings & mask ? " }X{ " :
                          s.sides[1].items & mask ? "  x  " : "     ";
                 printf("%s|", c);
             }
@@ -400,44 +485,40 @@ private:
         uint32_t moves_mask = tables.capture_move_masks[item_index];
         uint32_t available_dst = (moves_mask & (state.sides[0].items | state.sides[1].items)) ^ moves_mask;
         uint32_t may_be_captured = tables.capture_masks[item_index] & state.sides[1].items;
-        
-        //printf("%d %08X %08X %08X\n", item_index, moves_mask, available_dst, may_be_captured);
 
         // not allow capture same items multiple times
         may_be_captured &= ~captured;
 
-        //printf("%08X\n", may_be_captured);
-        
-        if (may_be_captured == 0 || available_dst == 0) {
+        size_t saved_states = 0;
+        if (may_be_captured != 0 && available_dst != 0) {
+            for (auto [capture_mask, dst_index] : tables.captures[item_index]) {
+                uint32_t dst_mask = index2bitmap(dst_index);
+                if (dst_mask == 0) {
+                    break;
+                }
+                // branching possible capture moves, follow moves
+                if ((capture_mask & may_be_captured) && (dst_mask & available_dst)) {
+                    // do move
+                    board_state_t next_state = do_move(state, index2bitmap(item_index), dst_mask);
+
+                    // try continue capturing
+                    saved_states += next_item_captures(next_state, dst_index, captured | capture_mask);
+                }
+            }
+        }
+
+        // nothing more can be captured
+        if (saved_states == 0) {
             // capture sequence completed
             if (captured != 0) {
                 // do capture
                 board_state_t next_state = do_capture(state, captured);
-                //print(next_state);
 
                 // save new state if it is final
                 states.push_back(next_state);
                 return 1;
             } else {
                 return 0;
-            }
-        }
-
-        size_t saved_states = 0;
-        for (auto [move, capture, dst_index] : tables.captures[item_index]) {
-            //printf("%08X %08X %d\n", move, capture, dst_index);
-
-            if (move == 0) {
-                break;
-            }
-            // branching possible capture moves, follow moves
-            if ((capture & may_be_captured) && (move & available_dst)) {
-                // do move
-                board_state_t next_state = do_move(state, index2bitmap(item_index), move);
-                //print(next_state);
-
-                // try continue capturing
-                saved_states += next_item_captures(next_state, dst_index, captured | capture);
             }
         }
 
@@ -448,8 +529,6 @@ private:
     {
         uint32_t moves_mask = tables.fwd_move_masks[item_index];
         uint32_t available_dst = (moves_mask & occupied) ^ moves_mask;
-
-        //printf("%d %08X %08X %08X\n", item_index, occupied, moves_mask, available_dst);
 
         if (available_dst == 0) {
             return 0;
@@ -471,9 +550,76 @@ private:
         return saved_states;
     }
 
+    //TODO: Generalize items and kings tables and next_* functions, parametrize function template with const table
+
     size_t next_king_captures(const board_state_t& state, int item_index, uint32_t captured)
     {
-        return 0;
+        uint32_t cur_occupied = state.sides[0].items | state.sides[1].items;
+        uint32_t moves_mask = tables.king_capture_move_masks[item_index];
+        uint32_t available_dst = (moves_mask & cur_occupied) ^ moves_mask;
+        uint32_t may_be_captured = tables.king_capture_masks[item_index] & state.sides[1].items;
+
+        // not allow capture same items multiple times
+        may_be_captured &= ~captured;
+
+        size_t saved_states = 0;
+        if (may_be_captured != 0 && available_dst != 0) {
+            // iter directions
+            for (const auto& dir_captures : tables.king_captures[item_index]) {
+                // iter captures in direction
+                for (const auto& dir_capture : dir_captures) {
+                    uint32_t capture_mask = dir_capture.first;
+
+                    if (capture_mask == 0) {
+                        break;
+                    }
+                    // cant't jump over allies
+                    if (capture_mask & state.sides[0].items) {
+                        break;
+                    }
+
+                    if (capture_mask & may_be_captured) {
+                        // iter over possible jump destinations
+                        for (int dst_index : dir_capture.second) {
+                            if (dst_index < 0) {
+                                break;
+                            }
+                            uint32_t dst_mask = index2bitmap(dst_index);
+
+                            // cant't jump over allies or capture/jump over multiple enemy items
+                            if (dst_mask & cur_occupied) {
+                                break;
+                            }
+
+                            if (dst_mask & available_dst) {
+                                // do move
+                                board_state_t next_state = do_move(state, index2bitmap(item_index), dst_mask);
+
+                                // try continue capturing
+                                saved_states += next_item_captures(next_state, dst_index, captured | capture_mask);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // nothing more can be captured
+        if (saved_states == 0) {
+            // capture sequence completed
+            if (captured != 0) {
+                // do capture
+                board_state_t next_state = do_capture(state, captured);
+
+                // save new state if it is final
+                states.push_back(next_state);
+                return 1;
+            } else {
+                return 0;
+            }
+        }
+
+        return saved_states;
     }
 
     size_t next_king_moves(int item_index)
@@ -574,7 +720,7 @@ void debug_depth(board_state_t brd, size_t depth)
             v.clear();
             v = g.gen_next_states(rotate(brd));
             if (v.size() > 0) {
-                brd = rotate(v.back());
+                brd = rotate(v.front());
             } else {
                 break;
             }
@@ -611,6 +757,7 @@ void debug()
         }
     }
 
+    printf("fwd_moves:\n");
     for (int i = 0; i < 32; i++) {
         printf("%2d %08x -> ", i, 1 << i);
         const auto& a = tables.fwd_moves[i];
@@ -620,15 +767,17 @@ void debug()
         }
         printf("\n");
     }
+    printf("captures:\n");
     for (int i = 0; i < 32; i++) {
         printf("%2d %08x -> ", i, 1 << i);
         const auto& a = tables.captures[i];
         int j = 0;
         for (auto v = a[j]; std::get<0>(v) != 0 && j < a.size(); v = a[++j]) {
-            printf("%08x_%08x_%02d, ", std::get<0>(v), std::get<1>(v), std::get<2>(v));
+            printf("%08x_%d, ", std::get<0>(v), std::get<1>(v));
         }
         printf("\n");
     }
+    printf("king_moves:\n");
     for (int i = 0; i < 32; i++) {
         printf("%2d %08x -> ", i, 1 << i);
         const auto& a = tables.king_moves[i];
@@ -642,16 +791,42 @@ void debug()
         }
         printf("\n");
     }
+    printf("king_captures:\n");
+    for (int i = 0; i < 32; i++) {
+        printf("%2d %08x -> ", i, 1 << i);
+        const auto& a = tables.king_captures[i];
+        for (const auto& b : a) {
+            int j = 0;
+            printf("[");
+            for (auto v = b[j]; v.first != 0 && j < b.size(); v = b[++j]) {
+                printf("%s{%08x, [", j == 0 ? "" : ", ", v.first);
+                int k = 0;
+                for (auto dst : v.second) {
+                    if (dst < 0) {
+                        break;
+                    }
+                    printf("%s%d", k++ == 0 ? "" : ", ", dst);
+                }
+                printf("]}");
+            }
+            printf("], ");
+        }
+        printf("\n");
+    }
 
+    printf("fwd_move_masks:\n");
     for (int i = 0; i < 32; i++) {
         printf("%2d %08x -> %08x\n", i, 1 << i, tables.fwd_move_masks[i]);
     }
+    printf("capture_move_masks:\n");
     for (int i = 0; i < 32; i++) {
         printf("%2d %08x -> %08x\n", i, 1 << i, tables.capture_move_masks[i]);
     }
+    printf("capture_masks:\n");
     for (int i = 0; i < 32; i++) {
         printf("%2d %08x -> %08x\n", i, 1 << i, tables.capture_masks[i]);
     }
+    printf("king_move_masks:\n");
     for (int i = 0; i < 32; i++) {
         printf("%2d %08x -> %08x\n", i, 1 << i, tables.king_move_masks[i]);
     }

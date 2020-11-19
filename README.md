@@ -168,9 +168,9 @@ and therefore less error-prone.
 
 #### Dreams
 
-Stage 1 - Write unit-tests that use SMT-solver to verify results (data);
-Stage 2 - Verify engine code itself;
-Stage 3 - Synthise the entire engine from the SMT rules;
-Stage 4 - PROFIT.
+* Stage 1 - Write unit-tests that use SMT-solver to verify results (data);
+* Stage 2 - Verify engine code itself;
+* Stage 3 - Synthise the entire engine from the SMT rules;
+* Stage 4 - PROFIT.
 
 
