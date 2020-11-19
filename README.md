@@ -58,7 +58,10 @@ and then try to verify if the given piece can get there by capturing multiple en
 
 I mean that "possible" (according to the rules) moves are the same as "valid" ones.
 
-So seems that move validator is not required.
+Also processing items one-by one can lead to violation of the following rule:
+"Jumping is mandatory and cannot be passed up to make a non-jumping move."
+
+So seems that move validator is not the optimal design.
 
 The possible solution with two callbacks could be:
 - A callable that generates the possible straight-line moves for a piece, including possible capturing at most a single enemy.

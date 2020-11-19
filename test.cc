@@ -317,6 +317,13 @@ constexpr auto gen_king_captures()
     return r;
 }
 
+//TODO: Optimizations:
+// - binary serach of moves/captures: whole bitmap -> half(forward+backward or cross) -> 4 directions
+// - 32*4 different functions, maybe generated with templates
+// - utilize the diagonal move symmetry, e.g. detect possible moves for multiple items same time
+
+//TODO: Generalisation: use same function for items and kings but different control structure
+
 const struct tables_t
 {
     //TODO: RENAME
@@ -704,7 +711,8 @@ private:
 // - paths depth histogram per win/lose/draw/unfinished
 // - number of items, number of kings, number of items+kings: 3 histograms per depth
 
-
+//TODO: measure time
+//TODO: Optimize DFS - avoid usage heap, go recursive, compare performance
 void DFS(board_state_t brd, size_t max_depth, bool verbose = true)
 {
     size_t total_boards = 0;
