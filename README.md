@@ -3,49 +3,35 @@
 # The Problem
 
 1. Build a game engine library that fulfills the following specifications:
-    1.1.- Builds on Linux.
-    1.2.- Can be built using your preferred build system (make, cmake, meson, etc...).
-    1.2.- Has a function that generates all the possible moves that can be played up to a specified number of moves.
-        1.2.2.- This function should take as arguments:
-            - Initial board status.
-            - The player that makes the first move.
-            - A callable that can determine if a move is valid.
-            - A callable that generates the possible moves for a piece.
-            - The desired maximum depth of moves.
-        1.2.3.- The callable that can determine if a move is valid should take the following arguments:
-            - Initial board status.
-            - The initial position of the piece to be moved.
-            - The final position of the piece to be moved.
-        1.2.4.- The callable that generates the possible moves for a piece should take the following arguments:
-            - Initial board status.
-            - The initial piece position
-            - The type of piece
-            - A callable that can determine if a move is valid.
-    1.3.- Write an example that generates the decision tree for the following configuration:
-        - Maximum tree depth is 100 moves.
-        - The White player is the first to move.
-        - Use the Russian draughts rules as specified below to write your callables.
-        - Use the initial Russian draughts board as the initial board status.
+   1. Builds on Linux.
+      1. Can be built using your preferred build system (make, cmake, meson, etc...).
+   2. Has a function that generates all the possible moves that can be played up to a specified number of moves.
+      1. This function should take as arguments:
+         - Initial board status.
+         - The player that makes the first move.
+         - A callable that can determine if a move is valid.
+         - A callable that generates the possible moves for a piece.
+         - The desired maximum depth of moves.
+      1. The callable that can determine if a move is valid should take the following arguments:
+         - Initial board status.
+         - The initial position of the piece to be moved.
+         - The final position of the piece to be moved.
+      1. The callable that generates the possible moves for a piece should take the following arguments:
+         - Initial board status.
+         - The initial piece position
+         - The type of piece
+         - A callable that can determine if a move is valid.
+   3. Write an example that generates the decision tree for the following configuration:
+   - Maximum tree depth is 100 moves.
+   - The White player is the first to move.
+   - Use the Russian draughts rules as specified below to write your callables.
+   - Use the initial Russian draughts board as the initial board status.
 2. Write a C API to use the engine library
 3. Add unit tests for the C API
 4. Multithread the generation of possible moves (optional)
 
-Additional game details:
-    Board description: 8×8 board with alternating dark and light squares. The left down square field should be dark.
-    Starting position: Each player starts with 12 pieces on the three rows closest to their own side, pieces are located in the dark squares. The row closest to each player is called the "crownhead" or "kings row". Usually, the colors of the pieces are black and white, but possible use other colors (one dark and other light).
-    Player turns: The player with white pieces (lighter color) moves first.
-    Pieces and their details:
-    Kings:
-    - Are differentiated as consisting of two normal pieces of the same color, stacked one on top of the other or by inverted pieces.
-    - If a player's piece moves into the kings row on the opposing player's side of the board, that piece to be "crowned", becoming a "king" and gaining the ability to move back or forward and choose on which free square at this diagonal to stop.
-    Men: Men move forward diagonally to an adjacent unoccupied square.
-    Actions:
-    Capture:
-    - If the adjacent square contains an opponent's piece, and the square immediately beyond it is vacant, the opponent's piece may be captured (and removed from the game) by jumping over it. Jumping can be done forward and backward. Multiple-jump moves are possible if, when the jumping piece lands, there is another piece that can be jumped. Jumping is mandatory and cannot be passed up to make a non-jumping move. When there is more than one way for a player to jump, one may choose which sequence to make, not necessarily the sequence that will result in the most amount of captures. However, one must make all the captures in that sequence. A captured piece is left on the board until all captures in a sequence have been made but cannot be jumped again (this rule also applies for the kings).
-    - If a man touches the kings row during a capture and can continue a capture, it jumps backwards as a king. The player can choose where to land after the capture.
-    Winning and draws:
 
-A player with no valid move remaining loses. This is the case if the player either has no pieces left or if a player's pieces are obstructed from making a legal move by the pieces of the opponent. A game is a draw if neither opponent has the possibility to win the game. The game is considered a draw when the same position repeats itself for the third time, with the same player having the move each time. If one player proposes a draw and his opponent accepts the offer. If a player has three kings (or more) in the game against a single enemy king and his 15th move (counting from the time of establishing the correlation of forces) cannot capture enemy king.
+Russian draughts rules: https://en.wikipedia.org/wiki/Russian_draughts#Rules
 
 
 
@@ -108,6 +94,83 @@ There can be:
 
 I plan to implement as many variants as possible and then compare the results.
 
+DFS should have cycle detection and/or depth limit.
+BFS depth is limited by memory.
 
+DFS is preferred for performance benchmarking of state-calculating algorythm, while it's memory consumption is low.
+
+
+## Unit-tests
+
+We can define rules in two different coordinate systems:
+- 2-dimentional, like Chess coordinate system;
+- 1-dimentional, where usable (black) squares have one-dimentional end-to-end numbering.
+
+Game engine implemented in 1-dim system.
+But rules in first coordinate system are easier to formulate and verify manually.
+
+So Unit-testing can be implemented this way:
+1. define initial state in 2-dim system;
+2. convert into 1-dim;
+3. do calculations with engine - generate possible subsequent states;
+4. convert result into 2-dim;
+5. verify result in 2-dim.
+
+Compliance with the rules in one coordinate system implies compliance in the other one.
+
+### Correctness and completeness
+
+Tests must verify two independant statements:
+- engine generates valid subsequent states;
+- engine generates all possible valid subsequent states.
+
+How?
+
+The only way I see is to generate states in 2-dim system and compare with engine results.
+
+That means to implement engine in both coordinate systems.
+
+Question:
+While 1-dim engine is implemented with tables generated from 2-dim representation.
+And tables are verified manually.
+Then probably testing is not required at all.
+How 1-dim engine can be implemented from 2-dim rules to eliminate the requirement of testing?
+
+
+### Testing of conversion itself (between 2-dim and 1-dim representation)
+
+Conversion between 2-dim and 1-dim must be isomorphic.
+
+So it can be tested next way:
+1. generate state in 2-dim;
+2. convert into 1-dim;
+3. convert into 2-dim;
+4. compare with initial state.
+
+Complete set of states can't be generated.
+
+Possible set of states:
+- empty state;
+- one item in every position;
+  - total 32 states;
+- all items exist in any position (12+12);
+  - total = (number of 32-bit itegers with 24 bits set) * (number of 24 bits integers with 12 bits set).
+
+I have no idea if it is possible to guarantee conversion is isomorphic for all states.
+
+
+### SMT
+
+TODO: Investigate if SMT-solver can be used to verify compliance of the rules by the implemented engine.
+
+While writing SMT rules is complicated itself, it is significantly more similar to defining rules in natural language,
+and therefore less error-prone.
+
+#### Dreams
+
+Stage 1 - Write unit-tests that use SMT-solver to verify results (data);
+Stage 2 - Verify engine code itself;
+Stage 3 - Synthise the entire engine from the SMT rules;
+Stage 4 - PROFIT.
 
 

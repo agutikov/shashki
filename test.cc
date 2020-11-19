@@ -25,33 +25,29 @@ constexpr bool is_valid(const X_t& x)
     return x.first >= 0 && x.first < 8 && x.second >= 0 && x.second < 8;
 }
 
-constexpr int index(const X_t& x)
+constexpr int pos2index(const X_t& x)
 {
     return (8*x.second + x.first) / 2;
 }
 
-constexpr uint32_t bitmap(const X_t& x)
+constexpr uint32_t pos2bitmap(const X_t& x)
 {
-    return 1 << index(x);
+    return 1 << pos2index(x);
 }
 
-constexpr uint32_t bitmap(int index)
+constexpr uint32_t index2bitmap(int index)
 {
     return 1 << index;
 }
 
-//TODO: possible representations of item: bitmap, index, coordinates {x, y}, string e.g. "e5"
-//TODO: conversions between each representations
 
-//TODO: same for one-step moves: bitmap-bitmap, index-index, x,y-x,y, "e5-f6"
-//TODO: complete move with captures - more complicated, use board states instead 
-
-
-class b_pos_iter
+constexpr auto gen_pos_table()
 {
-public:
-    void operator++()
-    {
+    std::array<X_t, 32> r{X_t{0, 0}};
+
+    X_t x{0, 0};
+    for (int i = 0; i < 32; i++) {
+        r[i] = x;
         x.first += 2;
         if ((x.first / 8) > 0) {
             x.second++;
@@ -60,23 +56,25 @@ public:
         }
     }
 
-    explicit operator bool() const
-    {
-        return x.first < 8 && x.second < 8;
-    }
+    return r;
+}
 
-    const X_t* operator->() const
-    {
-        return &x;
-    }
+const std::array<X_t, 32> pos_table = gen_pos_table();
 
-    X_t operator*() const
-    {
-        return x;
-    }
-private:
-    X_t x{0, 0};
-};
+const X_t& index2pos(int i)
+{
+    return pos_table[i];
+} 
+
+//TODO: possible representations of item: bitmap, index, coordinates {x, y}, string e.g. "e5"
+//TODO: conversions between each representations
+
+//TODO: same for one-step moves: bitmap-bitmap, index-index, x,y-x,y, "e5-f6"
+//TODO: complete move with captures - more complicated, use board states instead 
+
+
+//TODO: magic constants, related to type size
+
 
 template <size_t L>
 class moves_iter
@@ -119,7 +117,7 @@ private:
 template <size_t L>
 constexpr auto product(const std::array<int, L>& x)
 {
-    std::array<X_t, L*L> r;
+    std::array<X_t, L*L> r{X_t{0, 0}};
     size_t i = 0;
     for (int x1 : x) {
         for (int x2 : x) {
@@ -129,21 +127,21 @@ constexpr auto product(const std::array<int, L>& x)
     return r;
 }
 
-std::array<X_t, 2> forward_moves{X_t{-1,  1}, X_t{1,  1}};
+const std::array<X_t, 2> forward_moves{X_t{-1,  1}, X_t{1,  1}};
 
-std::array<X_t, 4> short_captures_dst = product(std::array<int, 2>{-2, 2});
-std::array<X_t, 4> short_captures = product(std::array<int, 2>{-1, 1});
+const std::array<X_t, 4> short_captures_dst = product(std::array<int, 2>{-2, 2});
+const std::array<X_t, 4> short_captures = product(std::array<int, 2>{-1, 1});
 
 template<size_t L>
 constexpr auto gen_moves(const std::array<X_t, L>& moves)
 {
-    std::array<std::array<uint32_t, L>, 32> r;
+    std::array<std::array<uint32_t, L>, 32> r{0};
 
-    for (b_pos_iter pos; pos; ++pos) {
+    for (int index = 0; index < 32; index++) {
         int i = 0;
-        r[index(*pos)].fill(0);
-        for (moves_iter<L> mov(*pos, moves); mov; ++mov) {
-            r[index(*pos)][i++] = bitmap(*mov);
+        r[index].fill(0);
+        for (moves_iter<L> mov(index2pos(index), moves); mov; ++mov) {//TODO: remove moves_iter
+            r[index][i++] = pos2bitmap(*mov);
         }
     }
 
@@ -153,7 +151,7 @@ constexpr auto gen_moves(const std::array<X_t, L>& moves)
 template <size_t L1, size_t L2>
 constexpr auto product(const std::array<X_t, L1>& x, const std::array<int, L2>& m)
 {
-    std::array<X_t, L1*L2> r;
+    std::array<X_t, L1*L2> r{X_t{0, 0}};
     size_t i = 0;
     for (X_t x_i : x) {
         for (int m_j : m) {
@@ -163,17 +161,17 @@ constexpr auto product(const std::array<X_t, L1>& x, const std::array<int, L2>& 
     return r;
 }
 
-std::array<X_t, 28> long_moves = product(product(std::array<int, 2>{-1, 1}), std::array<int, 7>{1, 2, 3, 4, 5, 6, 7});
+const std::array<X_t, 28> long_moves = product(product(std::array<int, 2>{-1, 1}), std::array<int, 7>{1, 2, 3, 4, 5, 6, 7});
 
 template<size_t L>
 constexpr auto moves_mask(const std::array<X_t, L>& moves)
 {
-    std::array<uint32_t, 32> r;
+    std::array<uint32_t, 32> r{0};
     r.fill(0);
 
-    for (b_pos_iter pos; pos; ++pos) {
-        for (moves_iter<L> mov(*pos, moves); mov; ++mov) {
-            r[index(*pos)] |= bitmap(*mov);
+    for (int index = 0; index < 32; index++) {
+        for (moves_iter<L> mov(index2pos(index), moves); mov; ++mov) {
+            r[index] |= pos2bitmap(*mov);
         }
     }
 
@@ -183,11 +181,11 @@ constexpr auto moves_mask(const std::array<X_t, L>& moves)
 template<size_t L>
 constexpr auto gen_captures(const std::array<X_t, L>& moves, const std::array<X_t, L>& captures)
 {
-    std::array<std::array<std::tuple<uint32_t, uint32_t, int>, L>, 32> r;
+    std::array<std::array<std::tuple<uint32_t, uint32_t, int>, L>, 32> r{{std::tuple<uint32_t, uint32_t, int>{0,0,0}}};
 
-    for (b_pos_iter pos; pos; ++pos) {
-        auto x = *pos;
-        auto& out_a = r[index(x)];
+    for (int index = 0; index < 32; index++) {
+        auto x = index2pos(index);
+        auto& out_a = r[index];
         out_a.fill({0,0,0});
 
         std::array<std::pair<X_t, X_t>, L> zip;
@@ -202,7 +200,39 @@ constexpr auto gen_captures(const std::array<X_t, L>& moves, const std::array<X_
             X_t dst = x + p.first;
             X_t cap = x + p.second;
             if (is_valid(dst)) {
-                out_a[i++] = std::tuple<uint32_t, uint32_t, int>(bitmap(dst), bitmap(cap), index(dst));
+                out_a[i++] = std::tuple<uint32_t, uint32_t, int>(pos2bitmap(dst), pos2bitmap(cap), pos2index(dst));
+            }
+        }
+    }
+
+    return r;
+}
+
+constexpr auto gen_king_moves()
+{
+    std::array<std::array<std::array<uint32_t, 7>, 4>, 32> r{{{0}}};
+    const auto m7 = std::array<int, 7>{1, 2, 3, 4, 5, 6, 7};
+
+    const std::array<std::array<X_t, 7>, 4> moves = {
+        product(std::array<X_t, 1>{X_t{-1, -1}}, m7),
+        product(std::array<X_t, 1>{X_t{ 1, -1}}, m7),
+        product(std::array<X_t, 1>{X_t{-1,  1}}, m7),
+        product(std::array<X_t, 1>{X_t{ 1,  1}}, m7),
+    };
+
+    for (int index = 0; index < 32; index++) {
+        auto x = index2pos(index);
+        auto& out_a = r[index];
+        for (size_t dir = 0; dir < 4; dir++){
+            auto& out_dir = out_a[dir];
+            out_dir.fill(0);
+            const auto& dir_moves = moves[dir];
+            int i = 0;
+            for (auto move : dir_moves) {
+                auto z = x + move;
+                if (is_valid(z)) {
+                    out_dir[i++] = pos2bitmap(z);
+                }
             }
         }
     }
@@ -213,19 +243,15 @@ constexpr auto gen_captures(const std::array<X_t, L>& moves, const std::array<X_
 const struct tables_t
 {
     std::array<std::array<uint32_t, 2>, 32> fwd_moves = gen_moves<2>(forward_moves);
-
-    // first is move, second is capture
-    std::array<std::array<std::tuple<uint32_t, uint32_t, int>, 4>, 32> captures = gen_captures<4>(short_captures_dst, short_captures);
-
-    std::array<std::array<uint32_t, 28>, 32> king_moves = gen_moves<28>(long_moves);
-
     std::array<uint32_t, 32> fwd_move_masks = moves_mask<2>(forward_moves);
 
+    // first is move, second is capture, third is move destination index
+    std::array<std::array<std::tuple<uint32_t, uint32_t, int>, 4>, 32> captures = gen_captures<4>(short_captures_dst, short_captures);
     std::array<uint32_t, 32> capture_move_masks = moves_mask<4>(short_captures_dst);
     std::array<uint32_t, 32> capture_masks = moves_mask<4>(short_captures);
 
+    std::array<std::array<std::array<uint32_t, 7>, 4>, 32> king_moves = gen_king_moves();
     std::array<uint32_t, 32> king_move_masks = moves_mask<28>(long_moves);
-
 } tables;
 
 
@@ -254,17 +280,17 @@ const int format_table[8][8] = {
 
 void print(const board_state_t& s)
 {
+    const char* cols = "     a     b     c     d     e     f     g     h     ";
+    const char* line = "  -------------------------------------------------  ";
     int row = 8;
-    printf("\n");
-    printf("     a     b     c     d     e     f     g     h    \n");
-    printf("  -------------------------------------------------  \n");
+    printf("\n%s\n%s\n", cols, line);
     for (const auto& f : format_table) {
         printf("%d |", row);
         for (int i : f) {
             if (i == -1) {
                 printf("     |");
             } else {
-                uint32_t mask = bitmap(i);
+                uint32_t mask = index2bitmap(i);
                 const char* c = s.sides[0].kings & mask ? " (O) " :
                          s.sides[0].items & mask ? "  o  " :
                          s.sides[1].kings & mask ? " }x{ " :
@@ -272,12 +298,10 @@ void print(const board_state_t& s)
                 printf("%s|", c);
             }
         }
-        printf(" %d\n", row);
-        printf("  -------------------------------------------------  \n");
+        printf(" %d\n%s\n", row, line);
         row--;
     }
-    printf("     a     b     c     d     e     f     g     h     \n");
-    printf("\n");
+    printf("%s\n\n", cols);
 }
 
 // https://stackoverflow.com/questions/746171/efficient-algorithm-for-bit-reversal-from-msb-lsb-to-lsb-msb-in-c
@@ -349,149 +373,183 @@ board_state_t do_capture(board_state_t state, uint32_t capture)
 
 
 
-//TODO const ref board_state_t
-size_t _next_item_captures(
-    std::vector<board_state_t>& states, 
-    board_state_t cur_state,
-    int item_index,
-    uint32_t captured)
+
+
+struct board_states_generator
 {
-    // Rules:
-    // - enemy items have to be removed after capture chain finished completely
-    // - every enemy item can't be captured twice
-    const board_side_t& player = cur_state.sides[0];
-    const board_side_t& enemy = cur_state.sides[1];
-    uint32_t occupied = player.items | enemy.items;
-    uint32_t capture_move_mask = tables.capture_move_masks[item_index];
-    uint32_t available_dst = (capture_move_mask & occupied) ^ capture_move_mask;
-    uint32_t captured_mask = tables.capture_masks[item_index];
-    uint32_t may_be_captured = captured_mask & enemy.items;
-    
-    //printf("%d %08X %08X %08X %08X %08X\n", item_index, occupied, capture_move_mask, available_dst, captured_mask, may_be_captured);
+    const std::vector<board_state_t>& gen_next_states(const board_state_t& s)
+    {
+        cur_state = s;
+        states.clear();
+        occupied = cur_state.sides[0].items | cur_state.sides[1].items;
 
-    // not allow capture same items multiple times
-    may_be_captured &= ~captured;
+        gen_states();
 
-    //printf("%08X\n", may_be_captured);
-    
-    if (may_be_captured == 0 || available_dst == 0) {
-        // capture sequence completed
-        if (captured != 0) {
-            // do capture
-            board_state_t next_state = do_capture(cur_state, captured);
-            //print(next_state);
+        return states;
+    }
 
-            // save new state if it is final
-            states.push_back(next_state);
-            return 1;
-        } else {
+private:
+
+    // move active item between recursive calls (change state) and collect captured enemies
+    // when capture sequence completed - remove captured enemies before state saved
+    size_t next_item_captures(const board_state_t& state, int item_index, uint32_t captured)
+    {
+        // Rules:
+        // - enemy items have to be removed after capture chain finished completely
+        // - every enemy item can't be captured twice
+        uint32_t moves_mask = tables.capture_move_masks[item_index];
+        uint32_t available_dst = (moves_mask & (state.sides[0].items | state.sides[1].items)) ^ moves_mask;
+        uint32_t may_be_captured = tables.capture_masks[item_index] & state.sides[1].items;
+        
+        //printf("%d %08X %08X %08X\n", item_index, moves_mask, available_dst, may_be_captured);
+
+        // not allow capture same items multiple times
+        may_be_captured &= ~captured;
+
+        //printf("%08X\n", may_be_captured);
+        
+        if (may_be_captured == 0 || available_dst == 0) {
+            // capture sequence completed
+            if (captured != 0) {
+                // do capture
+                board_state_t next_state = do_capture(state, captured);
+                //print(next_state);
+
+                // save new state if it is final
+                states.push_back(next_state);
+                return 1;
+            } else {
+                return 0;
+            }
+        }
+
+        size_t saved_states = 0;
+        for (auto [move, capture, dst_index] : tables.captures[item_index]) {
+            //printf("%08X %08X %d\n", move, capture, dst_index);
+
+            if (move == 0) {
+                break;
+            }
+            // branching possible capture moves, follow moves
+            if ((capture & may_be_captured) && (move & available_dst)) {
+                // do move
+                board_state_t next_state = do_move(state, index2bitmap(item_index), move);
+                //print(next_state);
+
+                // try continue capturing
+                saved_states += next_item_captures(next_state, dst_index, captured | capture);
+            }
+        }
+
+        return saved_states;
+    }
+
+    size_t next_item_moves(int item_index)
+    {
+        uint32_t moves_mask = tables.fwd_move_masks[item_index];
+        uint32_t available_dst = (moves_mask & occupied) ^ moves_mask;
+
+        //printf("%d %08X %08X %08X\n", item_index, occupied, moves_mask, available_dst);
+
+        if (available_dst == 0) {
             return 0;
         }
-    }
-    size_t saved_states = 0;
-    for (auto [move, capture, dst_index] : tables.captures[item_index]) {
-        //printf("%08X %08X %d\n", move, capture, dst_index);
 
-        if (move == 0) {
-            break;
+        size_t saved_states = 0;
+        for (uint32_t move : tables.fwd_moves[item_index]) {
+            if (move == 0) {
+                break;
+            }
+            if (move & available_dst) {
+                // do move - get new board state
+                board_state_t next_state = do_move(cur_state, index2bitmap(item_index), move);
+                // save new state
+                states.push_back(next_state);
+                saved_states++;
+            }
         }
-        // branching possible capture moves, follow moves
-        if ((capture & may_be_captured) && (move & available_dst)) {
-            // do move
-            board_state_t next_state = do_move(cur_state, bitmap(item_index), move);
-            //print(next_state);
-
-            // try continue capturing
-            saved_states += _next_item_captures(states, next_state, dst_index, captured | capture);
-        }
+        return saved_states;
     }
 
-    return saved_states;
-}
-
-size_t next_item_captures(std::vector<board_state_t>& states, board_state_t cur_state, int item_index)
-{
-    return _next_item_captures(states, cur_state, item_index, 0);
-}
-
-size_t next_king_captures(std::vector<board_state_t>& states, board_state_t cur_state, int item_index)
-{
-    return next_item_captures(states, cur_state, item_index);
-}
-
-size_t next_item_moves(std::vector<board_state_t>& states, board_state_t cur_state, int item_index)
-{
-    const board_side_t& player = cur_state.sides[0];
-    const board_side_t& enemy = cur_state.sides[1];
-    uint32_t occupied = player.items | enemy.items;
-    uint32_t fwd_moves_mask = tables.fwd_move_masks[item_index];
-    uint32_t available_dst = (fwd_moves_mask & occupied) ^ fwd_moves_mask;
-    
-    //printf("%d %08X %08X %08X\n", item_index, occupied, fwd_moves_mask, available_dst);
-    
-    if (available_dst == 0) {
+    size_t next_king_captures(const board_state_t& state, int item_index, uint32_t captured)
+    {
         return 0;
     }
-    size_t saved_states = 0;
-    for (uint32_t move : tables.fwd_moves[item_index]) {
-        if (move == 0) {
-            break;
+
+    size_t next_king_moves(int item_index)
+    {
+        uint32_t moves_mask = tables.king_move_masks[item_index];
+        uint32_t available_dst = (moves_mask & occupied) ^ moves_mask;
+
+        if (available_dst == 0) {
+            return 0;
         }
-        if (move & available_dst) {
-            // do move - get new board state
-            board_state_t next_state = do_move(cur_state, bitmap(item_index), move);
-            // save new state
-            states.push_back(next_state);
-            saved_states++;
+
+        size_t saved_states = 0;
+        for (const auto& move_dir : tables.king_moves[item_index]) {
+            for (uint32_t move : move_dir) {
+                if (move == 0) {
+                    break;
+                }
+                if (move & available_dst) {
+                    // do move - get new board state
+                    board_state_t next_state = do_move(cur_state, index2bitmap(item_index), move);
+                    // save new state
+                    states.push_back(next_state);
+                    saved_states++;
+                } else {
+                    // capture handled in next_king_captures()
+                    // can't jump while move without capture
+                    break;
+                }
+            }
         }
+        return saved_states;
     }
-    return saved_states;
-}
 
+    void gen_states()
+    {
+        size_t saved_states = 0;
+        const board_side_t& player = cur_state.sides[0];
 
-size_t next_king_moves(std::vector<board_state_t>& states, board_state_t cur_state, int item_index)
-{
-    return next_item_moves(states, cur_state, item_index);
-}
-
-
-// next_states -> single-threaded processor
-void next_states(std::vector<board_state_t>& states, board_state_t cur_state)
-{
-    //next_states.clear();
-
-    // As capture is mandatory and can't be skipped
-    // So first - try capture, and if no available captures - then try move
-
-    size_t saved_states = 0;
-    const board_side_t& player = cur_state.sides[0];
-    int item_index = 0;
-    for (uint32_t item = 1; item != 0; item <<= 1, item_index++) {
-        if (item & player.kings) {
-            saved_states += next_king_captures(states, cur_state, item_index);
-        } else if (item & player.items) {
-            saved_states += next_item_captures(states, cur_state, item_index);
-        }
-    }
-    if (saved_states == 0) {
-        item_index = 0;
-        for (uint32_t item = 1; item != 0; item <<= 1, item_index++) {
+        for (int item_index = 0; item_index < 32; item_index++) {
+            uint32_t item = index2bitmap(item_index);
             if (item & player.kings) {
-                saved_states += next_king_moves(states, cur_state, item_index);
+                saved_states += next_king_captures(cur_state, item_index, 0);
             } else if (item & player.items) {
-                saved_states += next_item_moves(states, cur_state, item_index);
+                saved_states += next_item_captures(cur_state, item_index, 0);
+            }
+        }
+
+        // As capture is mandatory and can't be skipped
+        // So first - try capture, and if no available captures - then try move
+        if (saved_states) {
+            return;
+        }
+
+        for (int item_index = 0; item_index < 32; item_index++) {
+            uint32_t item = index2bitmap(item_index);
+            if (item & player.kings) {
+                next_king_moves(item_index);
+            } else if (item & player.items) {
+                next_item_moves(item_index);
             }
         }
     }
-}
+
+    uint32_t occupied;
+
+    board_state_t cur_state;
+    std::vector<board_state_t> states;
+};
 
 
 
 
 void debug_step(board_state_t brd)
 {
-    std::vector<board_state_t> v;
-    next_states(v, brd);
+    board_states_generator g;
+    auto v = g.gen_next_states(brd);
     int count = 0;
     for (auto after : v) {
         printf("\n\n  ======================= %d ======================\n", count++);
@@ -502,20 +560,21 @@ void debug_step(board_state_t brd)
 
 void debug_depth(board_state_t brd, size_t depth)
 {
+    board_states_generator g;
+
     size_t count = 0;
     while (count <= depth) {
-        printf("\n  STEP=%d\n", count);
+        printf("\n  STEP=%lu\n", count);
         print(brd);
-        std::vector<board_state_t> v;
-        next_states(v, brd);
+        auto v = g.gen_next_states(brd);
         if (v.size() > 0) {
-            brd = v[0];
+            brd = v.front();
             print(brd);
 
             v.clear();
-            next_states(v, rotate(brd));
+            v = g.gen_next_states(rotate(brd));
             if (v.size() > 0) {
-                brd = rotate(v[0]);
+                brd = rotate(v.back());
             } else {
                 break;
             }
@@ -528,16 +587,21 @@ void debug_depth(board_state_t brd, size_t depth)
 
 void debug()
 {
+    int i = 0;
+    for (auto pos : pos_table) {
+        printf("%2d : {%d,%d}\n", i++, pos.first, pos.second);
+    }
+
     for (int Y = 0; Y < 8; Y += 2) {
         int y = Y;
         for (int x = 0; x < 8; x++) {
-            printf("%2d:%08x:{%d,%d} -> ", index({x, y}), bitmap({x, y}), x, y);
+            printf("%2d:%08x:{%d,%d} -> ", pos2index({x, y}), pos2bitmap({x, y}), x, y);
             X_t _x(x, y);
             X_t moves[4] = {{-1, -1}, {1, -1}, {-1, 1}, {1, 1}};
             for (auto move : moves) {
                 X_t t = _x + move;
                 if (is_valid(t)) {
-                    printf("%2d:%08x:{%d,%d}, ", index(t), bitmap(t), t.first, t.second);
+                    printf("%2d:%08x:{%d,%d}, ", pos2index(t), pos2bitmap(t), t.first, t.second);
                 }
             }
 
@@ -568,9 +632,13 @@ void debug()
     for (int i = 0; i < 32; i++) {
         printf("%2d %08x -> ", i, 1 << i);
         const auto& a = tables.king_moves[i];
-        int j = 0;
-        for (uint32_t v = a[j]; v != 0 && j < a.size(); v = a[++j]) {
-            printf("%08x, ", v);
+        for (const auto& b : a) {
+            int j = 0;
+            printf("[");
+            for (uint32_t v = b[j]; v != 0 && j < b.size(); v = b[++j]) {
+                printf("%s%08x", j == 0 ? "" : ", ", v);
+            }
+            printf("], ");
         }
         printf("\n");
     }
@@ -589,8 +657,9 @@ void debug()
     }
 
 
-    for (b_pos_iter it; it; ++it) {
-        printf("%d,%d\n", it->first, it->second);
+    for (int index = 0; index < 32; index++) {
+        auto x = index2pos(index);
+        printf("%d,%d\n", x.first, x.second);
     }
     for (moves_iter<4> it({5, 7}, short_captures); it; ++it) {
         printf("%d,%d\n", it->first, it->second);
