@@ -5,6 +5,7 @@
 #include <vector>
 #include <algorithm>
 #include <tuple>
+#include <stack>
 
 
 
@@ -462,7 +463,7 @@ board_state_t do_capture(board_state_t state, uint32_t capture)
 
 struct board_states_generator
 {
-    const std::vector<board_state_t>& gen_next_states(const board_state_t& s)
+    std::vector<board_state_t>& gen_next_states(const board_state_t& s)
     {
         cur_state = s;
         states.clear();
@@ -691,6 +692,75 @@ private:
 
 
 
+//TODO: collect stats:
+// - total boards number, per depth, and sum up to depth
+// - level width total max/mean/min
+// - level width total histogram
+// - level width max/mean/min per depth
+// - level width histogram per depth
+// - paths total number (!= number of boards on last level)
+// - paths depth total max/mean/min
+// - paths depth total histogram
+// - paths depth histogram per win/lose/draw/unfinished
+// - number of items, number of kings, number of items+kings: 3 histograms per depth
+
+
+void DFS(board_state_t brd, size_t max_depth, bool verbose = true)
+{
+    size_t total_boards = 0;
+
+    board_states_generator g;
+    std::stack<std::pair<size_t, std::vector<board_state_t>>> stack;
+    size_t sti = 0;
+
+    print(brd);
+    auto v = g.gen_next_states(brd);
+    if (v.size() > 0) {
+        stack.emplace(sti, std::move(v));
+        sti = 0;
+    } else {
+        return;
+    }
+
+    while (stack.size() > 0) {
+        if (sti < stack.top().second.size()) {
+            brd = stack.top().second[sti];
+
+            total_boards++;
+            if (verbose) {
+                printf("\n  depth: %lu; branch: %lu; total boards: %lu\n", stack.size(), sti, total_boards);
+                if (stack.size() % 2 == 0) {
+                    print(rotate(brd));
+                } else {
+                    print(brd);
+                }
+            } else if (total_boards % 10000000 == 0) {
+                printf("total boards: %lu\n", total_boards);
+            }
+
+            sti++;
+
+            if (stack.size() < max_depth) {
+                auto v = g.gen_next_states(rotate(brd));
+                if (v.size() > 0) {
+                    stack.emplace(sti, std::move(v));
+                    sti = 0;
+                }
+            }
+        } else {
+            sti = stack.top().first;
+            stack.pop();
+        }
+    }
+
+    printf("total boards: %lu\n", total_boards);
+}
+
+
+
+
+
+
 
 void debug_step(board_state_t brd)
 {
@@ -708,17 +778,19 @@ void debug_depth(board_state_t brd, size_t depth)
 {
     board_states_generator g;
 
-    size_t count = 0;
-    while (count <= depth) {
-        printf("\n  STEP=%lu\n", count);
+    size_t cnt = 0;
+    while (cnt <= depth) {
+        printf("\n  move: %lu\n", cnt);
         print(brd);
         auto v = g.gen_next_states(brd);
+        cnt++;
         if (v.size() > 0) {
             brd = v.front();
+            printf("\n  move: %lu\n", cnt);
             print(brd);
 
-            v.clear();
             v = g.gen_next_states(rotate(brd));
+            cnt++;
             if (v.size() > 0) {
                 brd = rotate(v.front());
             } else {
@@ -727,7 +799,6 @@ void debug_depth(board_state_t brd, size_t depth)
         } else {
             break;
         }
-        count++;
     }
 }
 
@@ -973,10 +1044,13 @@ void calc_all()
 
 int main()
 {
-    debug();
+    //debug();
 
 
     //calc_all();
+
+
+    DFS({board_side_t{0, 0x0FFF}, board_side_t{0, 0xFFF00000}}, 12, false);
 
 
     return 0;

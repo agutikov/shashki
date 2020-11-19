@@ -118,6 +118,15 @@ So Unit-testing can be implemented this way:
 
 Compliance with the rules in one coordinate system implies compliance in the other one.
 
+### Test cases
+
+Set of test cases for every part of rules is an permutation of next traits:
+- items and kings
+- moves and captures
+- without obstackls, with obstackls, near walls
+- capture one item, capture multiple items
+
+
 ### Correctness and completeness
 
 Tests must verify two independant statements:
