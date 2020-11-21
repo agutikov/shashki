@@ -7,6 +7,12 @@
 #include <tuple>
 #include <stack>
 #include <chrono>
+#include <map>
+#include <iostream>
+
+#include <boost/program_options.hpp>
+
+namespace po = boost::program_options;
 
 using namespace std::literals::chrono_literals;
 using Clock = std::chrono::steady_clock;
@@ -429,12 +435,12 @@ uint32_t reverse(uint32_t v)
            (bit_reverse_table_256[(v >> 24) & 0xff]);
 }
 
-board_side_t reverse(board_side_t b)
+board_side_t reverse(const board_side_t& b)
 {
     return {reverse(b.kings), reverse(b.items)};
 }
 
-board_state_t rotate(board_state_t s)
+board_state_t rotate(const board_state_t& s)
 {
     return {reverse(s.sides[1]), reverse(s.sides[0])};
 }
@@ -470,18 +476,18 @@ board_state_t do_capture(board_state_t state, uint32_t capture)
 
 
 
-
-struct board_states_generator
+struct _board_states_generator
 {
-    std::vector<board_state_t>& gen_next_states(const board_state_t& s)
+    _board_states_generator(std::vector<board_state_t>& buffer) :
+        _states(buffer)
+    {}
+
+    void gen_next_states(const board_state_t& s)
     {
         cur_state = s;
-        states.clear();
         occupied = cur_state.sides[0].items | cur_state.sides[1].items;
 
         gen_states();
-
-        return states;
     }
 
 private:
@@ -526,7 +532,7 @@ private:
                 board_state_t next_state = do_capture(state, captured);
 
                 // save new state if it is final
-                states.push_back(next_state);
+                _states.push_back(next_state);
                 return 1;
             } else {
                 return 0;
@@ -554,7 +560,7 @@ private:
                 // do move - get new board state
                 board_state_t next_state = do_move(cur_state, index2bitmap(item_index), move);
                 // save new state
-                states.push_back(next_state);
+                _states.push_back(next_state);
                 saved_states++;
             }
         }
@@ -623,7 +629,7 @@ private:
                 board_state_t next_state = do_capture(state, captured);
 
                 // save new state if it is final
-                states.push_back(next_state);
+                _states.push_back(next_state);
                 return 1;
             } else {
                 return 0;
@@ -652,7 +658,7 @@ private:
                     // do move - get new board state
                     board_state_t next_state = do_move(cur_state, index2bitmap(item_index), move);
                     // save new state
-                    states.push_back(next_state);
+                    _states.push_back(next_state);
                     saved_states++;
                 } else {
                     // capture handled in next_king_captures()
@@ -695,9 +701,31 @@ private:
     }
 
     uint32_t occupied;
-
     board_state_t cur_state;
+
+    std::vector<board_state_t>& _states;
+};
+
+
+//TODO: generator without output buffer - only game logic
+struct board_states_generator
+{
+    board_states_generator() :
+        states(32),
+        g(states)
+    {}
+
+    const std::vector<board_state_t>& gen_next_states(const board_state_t& s)
+    {
+        states.clear();
+        g.gen_next_states(s);
+        return states;
+    }
+
     std::vector<board_state_t> states;
+
+private:
+    _board_states_generator g;
 };
 
 
@@ -715,7 +743,6 @@ private:
 // - number of items, number of kings, number of items+kings: 3 histograms per depth
 // - cache stats: hits, ...
 
-//TODO: embed stats into generator?
 struct stats
 {
     size_t total_boards = 0;
@@ -723,6 +750,8 @@ struct stats
 
     void consume_level_width(size_t w)
     {
+        total_boards += w;
+
         if (w >= level_width_hist.size()) {
             level_width_hist.resize(w + 2, 0);
         }
@@ -741,91 +770,109 @@ struct stats
     }
 };
 
-//TODO: Optimize DFS - avoid using heap, compare performance
-void DFS(board_state_t brd, size_t max_depth, bool verbose = true, Clock::duration timeout = 1h)
+
+
+struct DFS
 {
-    auto started = Clock::now();
+    DFS(size_t max_depth, bool verbose = true, Clock::duration timeout = 5min) :
+        max_depth(max_depth),
+        verbose(verbose),
+        timeout(timeout),
+        stack(max_depth)
+    {}
 
-    stats sts;
+    const size_t boards_count_step = 1000000;
+    const Clock::duration status_print_period{2s};
 
-    //TODO: generator without output buffer - only game logic
-    //TODO: wrap it with buffer provider
-    //TODO: wrap it with stats collector
+    void do_search(const board_state_t& brd)
+    {
+        printf("  Initial board:\n");
+        print(brd);
 
-    board_states_generator g;
-    std::stack<std::pair<size_t, std::vector<board_state_t>>> stack;
-    size_t sti = 0;
+        started = Clock::now();
+        next_status_print = started + status_print_period;
+        next_total_boards = boards_count_step;
 
-    printf("  Initial board:\n");
-    print(brd);
-    auto v = g.gen_next_states(brd);
-    sts.consume_level_width(v.size());
-    if (v.size() > 0) {
-        stack.emplace(sti, std::move(v));
-        sti = 0;
-    } else {
-        return;
+        _search_r(stack.data(), brd, 0);
+
+        sts.print();
     }
 
-    bool running = true;
-
-    while (stack.size() > 0 && running) {
-        if (sti < stack.top().second.size()) {
-            brd = stack.top().second[sti];
-
-            sts.total_boards++;
-            if (verbose) {
-                printf("\n  depth: %lu; branch: %lu; total boards: %lu\n", stack.size(), sti, sts.total_boards);
-                if (stack.size() % 2 == 0) {
-                    print(rotate(brd));
-                } else {
-                    print(brd);
-                }
-            } else if (sts.total_boards % 20000000 == 0) {
-                printf("total boards: %lu\n", sts.total_boards);
+    void handle_status()
+    {
+        if (sts.total_boards >= next_total_boards) {
+            next_total_boards += boards_count_step;
+            if (Clock::now() > next_status_print) {
+                next_status_print += status_print_period;
+                auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(Clock::now() - started);
+                printf("elapsed: %lus, boards: %lu\n", elapsed.count(), sts.total_boards);
                 running = Clock::now() < (started + timeout);
                 if (!running) {
                     printf("Timeout.\n");
-                    break;
                 }
             }
+        }
+    }
 
-            sti++;
-
-            if (stack.size() < max_depth) {
-                auto v = g.gen_next_states(rotate(brd));
-                sts.consume_level_width(v.size());
-                if (v.size() > 0) {
-                    stack.emplace(sti, std::move(v));
-                    sti = 0;
-                }
-            }
+    void print_board(const board_state_t& brd, size_t depth, size_t branch)
+    {
+        printf("\n  depth: %lu; branch: %lu:\n", depth, branch);
+        if (depth % 2 == 0) {
+            print(rotate(brd));
         } else {
-            sti = stack.top().first;
-            stack.pop();
+            print(brd);
         }
     }
 
-    sts.print();
-}
+    void _search_r(board_states_generator* sp, const board_state_t& brd, size_t depth)
+    {
+        auto& v = sp->gen_next_states(brd);
+        sts.consume_level_width(v.size());
 
+        handle_status();
+        if (!running) {
+            return;
+        }
 
+        if (v.size() == 0) {
+            return;
+        }
 
-// Recursive DFS with heap vector is slightly slower
-size_t DFSr(board_state_t brd, size_t max_depth)
-{
-    max_depth--;
-    board_states_generator g;
-    auto v = g.gen_next_states(brd);
-    size_t brd_count = v.size();
-    if (v.size() > 0 && max_depth > 0) {
-        for (auto next_brd : v) {
-            brd_count += DFSr(rotate(next_brd), max_depth);
+        // go deeper
+        depth++;
+        sp++;
+
+        size_t branch = 0;
+        for (const auto& next_brd : v) {
+            if (!running) {
+                break;
+            }
+
+            if (verbose) {
+                print_board(brd, depth, branch);
+            }
+
+            if (depth < max_depth) {
+                _search_r(sp, rotate(next_brd), depth);
+            }
+
+            branch++;
         }
     }
-    return brd_count;
-}
 
+    size_t max_depth;
+    bool verbose;
+    Clock::duration timeout;
+    
+    std::vector<board_states_generator> stack;
+
+    Clock::time_point started;
+    Clock::time_point next_status_print;
+    size_t next_total_boards;
+    bool running = true;
+
+    stats sts;
+};
 
 
 const board_state_t initial_board = {board_side_t{0, 0x0FFF}, board_side_t{0, 0xFFF00000}};
@@ -1109,18 +1156,124 @@ void calc_all()
 }
 #endif
 
+struct readable_duration_t
+{
+    std::chrono::duration<float> value;
+    
+    readable_duration_t() = default;
 
-int main()
+    readable_duration_t(const Clock::duration& d) :
+        value(d)
+    {}
+
+    readable_duration_t& operator= (const Clock::duration& d)
+    {
+        value = d;
+        return *this;
+    }
+
+    static const std::map<std::string, Clock::duration> units;
+
+    friend std::ostream& operator<<(std::ostream &out, const readable_duration_t& d)
+    {
+        out << d.value.count() << 's';
+        return out;
+    }
+
+    friend std::istream& operator>>(std::istream &in, readable_duration_t& d)
+    {
+        float n;
+        std::string m;
+        in >> n >> m;
+
+        Clock::duration unit = 1s;
+
+        auto it = units.find(m);
+        if (it != units.end()) {
+            unit = it->second;
+        }
+
+        d.value = (unit * n);
+
+        return in;
+    }
+};
+
+const std::map<std::string, Clock::duration> readable_duration_t::units = 
+{
+    {"us", 1us},
+    {"ms", 1ms},
+    {"s", 1s},
+    {"m", 1min},
+    {"h", 1h},
+    {"d", 24h}
+};
+
+
+int main(int argc, const char* argv[])
 {
     //debug();
-
-
     //calc_all();
 
+    size_t max_depth;
+    bool verbose;
+    readable_duration_t timeout{10s};
+    std::string command;
 
-    DFS(initial_board, 13, false, 100s);
-    //size_t total_boards = DFSr(initial_board, 12);
-    //printf("total boards: %lu\n", total_boards);
+    std::string header = "Usage: ";
+    header += argv[0];
+    header += " command [options]\n";
+    header += "\nAvailable commands: dfs,\n";
+    header += "\nOptions";
+
+    po::options_description visible_opts(header);
+    visible_opts.add_options()
+        ("help,h", "show help")
+        ("max-depth,d", po::value<size_t>(&max_depth)->default_value(10), "max search depth")
+        ("verbose,v", po::value<bool>(&verbose)->default_value(false), "print all boards")
+        ("timeout,t", po::value<readable_duration_t>(&timeout), "timeout, default=10s")
+    ;
+
+    po::options_description hidden_opts;
+    hidden_opts.add_options()
+        ("command", po::value<std::string>(&command), "command")
+    ;
+
+    po::options_description cmdline_opts;
+    cmdline_opts.add(visible_opts).add(hidden_opts);
+
+    po::positional_options_description pos;
+    pos.add("command", -1);
+
+    po::variables_map vm;
+    try {
+        po::store(po::command_line_parser(argc, argv).options(cmdline_opts).positional(pos).run(), vm);
+        po::notify(vm);
+    } catch(const po::error& e) {
+        std::cerr << "Couldn't parse command line arguments:" << std::endl;
+        std::cerr << e.what() << std::endl << std::endl;
+        std::cerr << visible_opts << std::endl;
+        return 1;
+    }
+
+    if (vm.count("help")) {
+        std::cout << visible_opts << std::endl;
+        return 0;
+    }
+
+    if (command == "dfs") {
+        std::cout << "DFS, max_depth=" << max_depth << ", timeout=" << timeout << std::endl;
+        DFS x(max_depth, verbose, std::chrono::duration_cast<std::chrono::seconds>(timeout.value));
+        x.do_search(initial_board);
+    } else {
+        if (vm.count("command") == 0) {
+            std::cerr << "command is required" << std::endl;
+        } else {
+            std::cerr << "Unknown command" << std::endl;
+        }
+        std::cerr << visible_opts << std::endl;
+        return 1;
+    }
 
     return 0;
 }
