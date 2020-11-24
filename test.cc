@@ -842,6 +842,13 @@ void debug_judy_128_set()
 // - number of items, number of kings, number of items+kings: 3 histograms per depth
 // - cache stats: hits, ...
 
+template<typename T>
+float total_seconds(T d)
+{
+    using fsecs = std::chrono::duration<float, std::chrono::seconds::period>;
+    return std::chrono::duration_cast<fsecs>(d).count();
+}
+
 struct stats
 {
     void consume_level_width(size_t w, size_t depth)
@@ -874,8 +881,7 @@ struct stats
 
     void print(Clock::time_point started)
     {
-        using fsecs = std::chrono::duration<float, std::chrono::seconds::period>;
-        float elapsed_s = std::chrono::duration_cast<fsecs>(Clock::now() - started).count();
+        float elapsed_s = total_seconds(Clock::now() - started);
         printf("\nelapsed %fs\n\n", elapsed_s);
 
         printf("total boards: %lu\n\n", _total_boards);
@@ -910,10 +916,12 @@ struct DFS
 {
     DFS(size_t max_depth, 
         bool verbose = true,
-        Clock::duration timeout = 5min,
+        std::chrono::duration<float> timeout = 5min,
         size_t max_width = 0,
         bool randomize = false,
-        bool cache = false)
+        bool cache = false,
+        bool print_win_path = false,
+        bool print_loop_board = false)
     :
         max_depth(max_depth),
         randomize(randomize),
@@ -921,7 +929,9 @@ struct DFS
         verbose(verbose),
         timeout(timeout),
         stack(max_depth),
-        enable_cache(cache)
+        enable_cache(cache),
+        print_win_path(print_win_path),
+        print_loop_board(print_loop_board)
     {
         std::mt19937 rng{std::random_device{}()};
         for (size_t i = 0; i < MAX_LEVEL_WIDTH; i++) {
@@ -930,13 +940,25 @@ struct DFS
             std::shuffle(v.begin(), v.end(), rng);
             random_indexes.emplace_back(std::move(v));
         }
+
+        path.reserve(max_depth);
     }
 
     const size_t boards_count_step = 1000000;
     const Clock::duration status_print_period{2s};
 
+    //TODO:  move some args from ctor
     void do_search(const board_state_t& brd)
     {
+        std::cout << std::boolalpha
+                  << "DFS, max_depth=" << max_depth
+                  << ", timeout=" << total_seconds(timeout) << "s"
+                  << ", max_width=" << max_width
+                  << ", randomize=" << randomize
+                  << ", cache=" << enable_cache 
+                  << ", print_loops=" << print_loop_board
+                  << ", print_wins=" << print_win_path
+                  << std::endl;
         printf("\n  Initial board:\n");
         print(brd);
 
@@ -945,11 +967,17 @@ struct DFS
         next_status_print = started + status_print_period;
         next_total_boards = boards_count_step;
         sts = std::move(stats());
+        if (print_win_path) {
+            path.clear();
+        }
 
         _search_r(stack.data(), brd, 0);
 
         sts.print(started);
-        printf("\nCached: %lu boards, %.2f%%\n", boards_cache.size(), 100.0*boards_cache.size()/sts.total_boards());
+        if (enable_cache) {
+            printf("\nCached: %lu boards, Hits: %.2f%%\n", boards_cache.size(),
+                    100.0*(sts.total_boards() - boards_cache.size())/sts.total_boards());
+        }
     }
 
 private:
@@ -979,6 +1007,16 @@ private:
         }
     }
 
+    void print_board(const board_state_t& brd, size_t depth)
+    {
+        printf("\n  depth: %lu;\n", depth);
+        if (depth % 2 == 0) {
+            print(rotate(brd));
+        } else {
+            print(brd);
+        }
+    }
+
     void _handle_brd(board_states_generator* sp, const board_state_t& brd, size_t depth, size_t branch)
     {
         if (verbose) {
@@ -988,6 +1026,10 @@ private:
         if (enable_cache) {
             if (!boards_cache.insert(std::pair<uint64_t, uint64_t>(brd))) {
                 sts.loop();
+                if (print_loop_board) {
+                    printf("LOOP:\n");
+                    print_board(brd, depth);
+                }
                 return;
             }
         }
@@ -1010,37 +1052,71 @@ private:
         }
 
         if (v.size() == 0) {
+            if (print_win_path) {
+                printf("%s WINS:\n", (depth % 2) ? "B" : "W");
+                size_t d = 0;
+                for (const auto& b : path) {
+                    print_board(b, d++);
+                }
+                print_board(brd, depth);
+                printf("%s WINS!\n\n", (depth % 2) ? "B" : "W");
+            }
             return;
         }
 
         // go deeper
         depth++;
         sp++;
+        if (print_win_path) {
+            path.push_back(brd);
+        }
 
-        if (max_width == 0 && !randomize) {
-            size_t branch = 0;
-            for (const auto& next_brd : v) {
-                if (!running) {
-                    break;
+        if (max_width == 0) {
+            if (randomize) {
+                // Iterate all branches in random order
+
+                const auto& indexes = random_indexes[v.size()];
+                for (size_t i = 0; i < v.size(); i++) {
+                    size_t index = indexes[i];
+                    _handle_brd(sp, v[index], depth, index);
                 }
-                _handle_brd(sp, next_brd, depth, branch++);
-            }
-        } else if (!randomize) {
-            _handle_brd(sp, v.front(), depth, 0);
-            if (max_width == 3 && v.size() >= 3) {
-                size_t i = v.size() / 2;
-                _handle_brd(sp, v[i], depth, i);
-            }
-            if (max_width >= 2 && v.size() >= 2) {
-                _handle_brd(sp, v.back(), depth, v.size() - 1);
+            } else {
+                // Iterate all branches in normal order
+
+                size_t branch = 0;
+                for (const auto& next_brd : v) {
+                    if (!running) {
+                        break;
+                    }
+                    _handle_brd(sp, next_brd, depth, branch++);
+                }
             }
         } else {
-            size_t len = std::min(max_width, v.size());
-            const auto& indexes = random_indexes[v.size()];
-            for (size_t i = 0; i < len; i++) {
-                size_t index = indexes[i];
-                _handle_brd(sp, v[index], depth, index);
+            if (randomize) {
+                // Iterate limited number or branches in random order
+
+                size_t len = std::min(max_width, v.size());
+                const auto& indexes = random_indexes[v.size()];
+                for (size_t i = 0; i < len; i++) {
+                    size_t index = indexes[i];
+                    _handle_brd(sp, v[index], depth, index);
+                }
+            } else {
+                // Iterate limited number of branches - 1, 2 or 3
+
+                _handle_brd(sp, v.front(), depth, 0);
+                if (max_width == 3 && v.size() >= 3) {
+                    size_t i = v.size() / 2;
+                    _handle_brd(sp, v[i], depth, i);
+                }
+                if (max_width >= 2 && v.size() >= 2) {
+                    _handle_brd(sp, v.back(), depth, v.size() - 1);
+                }
             }
+        }
+
+        if (print_win_path) {
+            path.pop_back();
         }
     }
 
@@ -1048,11 +1124,16 @@ private:
     const size_t max_width;
     const bool randomize;
     const bool verbose;
-    const Clock::duration timeout;
+    const std::chrono::duration<float> timeout;
     
     std::vector<board_states_generator> stack;
+
     bool enable_cache;
     judy_128_set boards_cache;
+
+    bool print_win_path;
+    bool print_loop_board;
+    std::vector<board_state_t> path;
 
     Clock::time_point started;
     Clock::time_point next_status_print;
@@ -1424,6 +1505,8 @@ int main(int argc, const char* argv[])
     bool randomize;
     size_t max_width;
     bool cache;
+    bool print_loops;
+    bool print_wins;
 
     std::string header = "DTE - Decision Tree Explorer (Russian Draughts)\n";
     header += "\nUsage: ";
@@ -1443,7 +1526,9 @@ int main(int argc, const char* argv[])
         ("timeout,t", po::value<readable_duration_t>(&timeout), timeout_desc.c_str())
         ("randomize,r", po::bool_switch(&randomize), "randomize braches iteration")
         ("max-width,w", po::value<size_t>(&max_width)->default_value(0), "max branches iterate, 0 - all\nwith randomize=false max-width = 1 | 2 | 3")
-        ("cache,c", po::bool_switch(&cache), "enable board cache and loop detection") 
+        ("cache,c", po::bool_switch(&cache), "enable board cache and loop detection")
+        ("print-loops,L", po::bool_switch(&print_loops), "print board for loop case")
+        ("print-wins,W", po::bool_switch(&print_wins), "print entire path for win case")
     ;
 
     po::options_description hidden_opts;
@@ -1474,14 +1559,12 @@ int main(int argc, const char* argv[])
     }
 
     if (command == "dfs") {
-        std::cout << std::boolalpha
-                  << "DFS, max_depth=" << max_depth << ", timeout=" << timeout
-                  << ", max_width=" << max_width << ", randomize=" << randomize
-                  << ", cache=" << cache << std::endl;
         DFS x(max_depth, verbose,
-              std::chrono::duration_cast<std::chrono::seconds>(timeout.value),
-              max_width, randomize, cache);
+              timeout.value,
+              max_width, randomize, cache, print_wins, print_loops);
+
         x.do_search(initial_board);
+
     } else {
         if (vm.count("command") == 0) {
             std::cerr << "command is required" << std::endl;

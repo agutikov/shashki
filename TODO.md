@@ -1,22 +1,24 @@
 
 
-1. Multithreaded DFS
-2. SIGINT, SIGTERM
+2. unordered_set, google dense set 
+3. 2-threaded dfs with cache
+4. SIGINT, SIGTERM
+5. Multithreaded DFS
    
-3. Cleanup, types, conversions, TODOs
+6. Cleanup, types, conversions, TODOs
    
-4. С interface
-5. Build system, debug app, tool, boards number calculator, tests
-6. Unit tests, coverage?
+7. С interface
+8. Build system, debug app, tool, boards number calculator, tests
+9. Unit tests, coverage?
 
 
-7. BFS
-8.  Multithreaded BFS
-9.  TODOs
-10. Cache as state->subseq_states mapping
-11. Global Cache
-12. SMT unit tests
-13. Optimization and generalization
+10. BFS
+11. Multithreaded BFS
+12. TODOs
+13. Cache as state->subseq_states mapping
+14. Global Cache
+15. SMT unit tests
+16. Optimization and generalization
 
 
 
