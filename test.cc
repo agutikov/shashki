@@ -9,10 +9,16 @@
 #include <chrono>
 #include <map>
 #include <iostream>
+#include <initializer_list>
+#include <random>
 
+#include <boost/range/adaptor/map.hpp>
+#include <boost/algorithm/string/join.hpp>
 #include <boost/program_options.hpp>
 
 namespace po = boost::program_options;
+
+using namespace std::string_literals;
 
 using namespace std::literals::chrono_literals;
 using Clock = std::chrono::steady_clock;
@@ -357,6 +363,9 @@ const struct tables_t
 } tables;
 
 
+// experimantal 
+#define MAX_WIDTH 64
+
 struct board_side_t
 {
     uint32_t kings = 0;
@@ -365,6 +374,8 @@ struct board_side_t
 
 struct board_state_t
 {
+    
+
     std::array<board_side_t, 2> sides;
 };
 
@@ -707,11 +718,10 @@ private:
 };
 
 
-//TODO: generator without output buffer - only game logic
 struct board_states_generator
 {
     board_states_generator() :
-        states(32),
+        states(MAX_WIDTH),
         g(states)
     {}
 
@@ -747,8 +757,11 @@ struct stats
 {
     size_t total_boards = 0;
     std::vector<size_t> level_width_hist;
+    size_t w_wins = 0;
+    size_t b_wins = 0;
+    size_t _depth_limit = 0;
 
-    void consume_level_width(size_t w)
+    void consume_level_width(size_t w, size_t depth)
     {
         total_boards += w;
 
@@ -756,48 +769,81 @@ struct stats
             level_width_hist.resize(w + 2, 0);
         }
         level_width_hist[w]++;
+        
+        if (w == 0) {
+            if (depth % 2 == 0) {
+                b_wins++;
+            } else {
+                w_wins++;
+            }
+        }
     }
 
-    void print()
+    void depth_limit()
     {
-        printf("\ntotal boards: %lu\n\n", total_boards);
+        _depth_limit++;
+    }
+
+    void print(Clock::time_point started)
+    {
+        using fsecs = std::chrono::duration<float, std::chrono::seconds::period>;
+        float elapsed_s = std::chrono::duration_cast<fsecs>(Clock::now() - started).count();
+        printf("\nelapsed %fs\n\n", elapsed_s);
+
+        printf("total boards: %lu\n\n", total_boards);
+
+        printf("%.2f Mboards/s\n\n", total_boards / elapsed_s / 1000000);
 
         printf("level width histogram:\n");
         for (int w = 0; w < level_width_hist.size(); w++) {
             printf("%2d: %lu\n", w, level_width_hist[w]);
         }
         printf("\n");
+
+        printf("W wins: %lu; B wins: %lu; depth limits: %lu\n", w_wins, b_wins, _depth_limit);
     }
 };
 
 
-
 struct DFS
 {
-    DFS(size_t max_depth, bool verbose = true, Clock::duration timeout = 5min) :
+    DFS(size_t max_depth, bool verbose = true, Clock::duration timeout = 5min, size_t max_width = 0, bool randomize = false) :
         max_depth(max_depth),
+        randomize(randomize),
+        max_width(max_width),
         verbose(verbose),
         timeout(timeout),
         stack(max_depth)
-    {}
+    {
+        std::mt19937 rng{std::random_device{}()};
+        for (size_t i = 0; i < MAX_WIDTH; i++) {
+            std::vector<size_t> v(i);
+            std::iota(v.begin(), v.end(), 0);
+            std::shuffle(v.begin(), v.end(), rng);
+            random_indexes.emplace_back(std::move(v));
+        }
+    }
 
     const size_t boards_count_step = 1000000;
     const Clock::duration status_print_period{2s};
 
     void do_search(const board_state_t& brd)
     {
-        printf("  Initial board:\n");
+        printf("\n  Initial board:\n");
         print(brd);
 
+        running = true;
         started = Clock::now();
         next_status_print = started + status_print_period;
         next_total_boards = boards_count_step;
+        sts = std::move(stats());
 
         _search_r(stack.data(), brd, 0);
 
-        sts.print();
+        sts.print(started);
     }
 
+private:
     void handle_status()
     {
         if (sts.total_boards >= next_total_boards) {
@@ -824,10 +870,23 @@ struct DFS
         }
     }
 
+    void _handle_brd(board_states_generator* sp, const board_state_t& brd, size_t depth, size_t branch)
+    {
+        if (verbose) {
+            print_board(brd, depth, branch);
+        }
+
+        if (depth < max_depth) {
+            _search_r(sp, rotate(brd), depth);
+        } else {
+            sts.depth_limit();
+        }
+    }
+
     void _search_r(board_states_generator* sp, const board_state_t& brd, size_t depth)
     {
         auto& v = sp->gen_next_states(brd);
-        sts.consume_level_width(v.size());
+        sts.consume_level_width(v.size(), depth);
 
         handle_status();
         if (!running) {
@@ -842,36 +901,49 @@ struct DFS
         depth++;
         sp++;
 
-        size_t branch = 0;
-        for (const auto& next_brd : v) {
-            if (!running) {
-                break;
+        if (max_width == 0 && !randomize) {
+            size_t branch = 0;
+            for (const auto& next_brd : v) {
+                if (!running) {
+                    break;
+                }
+                _handle_brd(sp, next_brd, depth, branch++);
             }
-
-            if (verbose) {
-                print_board(brd, depth, branch);
+        } else if (!randomize) {
+            _handle_brd(sp, v.front(), depth, 0);
+            if (max_width == 3 && v.size() >= 3) {
+                size_t i = v.size() / 2;
+                _handle_brd(sp, v[i], depth, i);
             }
-
-            if (depth < max_depth) {
-                _search_r(sp, rotate(next_brd), depth);
+            if (max_width >= 2 && v.size() >= 2) {
+                _handle_brd(sp, v.back(), depth, v.size() - 1);
             }
-
-            branch++;
+        } else {
+            size_t len = std::min(max_width, v.size());
+            const auto& indexes = random_indexes[v.size()];
+            for (size_t i = 0; i < len; i++) {
+                size_t index = indexes[i];
+                _handle_brd(sp, v[index], depth, index);
+            }
         }
     }
 
-    size_t max_depth;
-    bool verbose;
-    Clock::duration timeout;
+    const size_t max_depth;
+    const size_t max_width;
+    const bool randomize;
+    const bool verbose;
+    const Clock::duration timeout;
     
     std::vector<board_states_generator> stack;
 
     Clock::time_point started;
     Clock::time_point next_status_print;
     size_t next_total_boards;
-    bool running = true;
+    bool running;
 
     stats sts;
+    
+    std::vector<std::vector<size_t>> random_indexes;
 };
 
 
@@ -1182,20 +1254,29 @@ struct readable_duration_t
 
     friend std::istream& operator>>(std::istream &in, readable_duration_t& d)
     {
-        float n;
-        std::string m;
-        in >> n >> m;
+        float v;
+        std::string u;
+        in >> v;
+        
+        if (!in.eof()) {
+            in >> u;
+        }
 
         Clock::duration unit = 1s;
 
-        auto it = units.find(m);
+        auto it = units.find(u);
         if (it != units.end()) {
             unit = it->second;
         }
 
-        d.value = (unit * n);
+        d.value = unit * v;
 
         return in;
+    }
+
+    static std::string all_units(const std::string& delim)
+    {
+        return boost::algorithm::join(units | boost::adaptors::map_keys, delim);
     }
 };
 
@@ -1209,7 +1290,6 @@ const std::map<std::string, Clock::duration> readable_duration_t::units =
     {"d", 24h}
 };
 
-
 int main(int argc, const char* argv[])
 {
     //debug();
@@ -1219,19 +1299,27 @@ int main(int argc, const char* argv[])
     bool verbose;
     readable_duration_t timeout{10s};
     std::string command;
+    bool randomize;
+    size_t max_width;
 
-    std::string header = "Usage: ";
+    std::string header = "DTE - Decision Tree Explorer (Russian Draughts)\n";
+    header += "\nUsage: ";
     header += argv[0];
-    header += " command [options]\n";
-    header += "\nAvailable commands: dfs,\n";
+    header += " dfs| [options]\n";
+    header += "\nCommands:\n";
+    header += "  dfs - Depth-first search\n";
     header += "\nOptions";
+
+    std::string timeout_desc = "timeout, default=10s\nunits = "s + readable_duration_t::all_units(" | ") + "\ndefault unit = s";
 
     po::options_description visible_opts(header);
     visible_opts.add_options()
         ("help,h", "show help")
         ("max-depth,d", po::value<size_t>(&max_depth)->default_value(10), "max search depth")
-        ("verbose,v", po::value<bool>(&verbose)->default_value(false), "print all boards")
-        ("timeout,t", po::value<readable_duration_t>(&timeout), "timeout, default=10s")
+        ("verbose,v", po::bool_switch(&verbose), "print all boards")
+        ("timeout,t", po::value<readable_duration_t>(&timeout), timeout_desc.c_str())
+        ("randomize,r", po::bool_switch(&randomize), "randomize braches iteration")
+        ("max-width,w", po::value<size_t>(&max_width)->default_value(0), "max branches iterate, 0 - all\nwith randomize=false max-width = 1 | 2 | 3")        
     ;
 
     po::options_description hidden_opts;
@@ -1262,8 +1350,12 @@ int main(int argc, const char* argv[])
     }
 
     if (command == "dfs") {
-        std::cout << "DFS, max_depth=" << max_depth << ", timeout=" << timeout << std::endl;
-        DFS x(max_depth, verbose, std::chrono::duration_cast<std::chrono::seconds>(timeout.value));
+        std::cout << std::boolalpha
+                  << "DFS, max_depth=" << max_depth << ", timeout=" << timeout
+                  << ", max_width=" << max_width << ", randomize=" << randomize << std::endl;
+        DFS x(max_depth, verbose,
+              std::chrono::duration_cast<std::chrono::seconds>(timeout.value),
+              max_width, randomize);
         x.do_search(initial_board);
     } else {
         if (vm.count("command") == 0) {
