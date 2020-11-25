@@ -12,20 +12,20 @@
          - A callable that can determine if a move is valid.
          - A callable that generates the possible moves for a piece.
          - The desired maximum depth of moves.
-      1. The callable that can determine if a move is valid should take the following arguments:
+      2. The callable that can determine if a move is valid should take the following arguments:
          - Initial board status.
          - The initial position of the piece to be moved.
          - The final position of the piece to be moved.
-      1. The callable that generates the possible moves for a piece should take the following arguments:
+      3. The callable that generates the possible moves for a piece should take the following arguments:
          - Initial board status.
          - The initial piece position
          - The type of piece
          - A callable that can determine if a move is valid.
    3. Write an example that generates the decision tree for the following configuration:
-   - Maximum tree depth is 100 moves.
-   - The White player is the first to move.
-   - Use the Russian draughts rules as specified below to write your callables.
-   - Use the initial Russian draughts board as the initial board status.
+      - Maximum tree depth is 100 moves.
+      - The White player is the first to move.
+      - Use the Russian draughts rules as specified below to write your callables.
+      - Use the initial Russian draughts board as the initial board status.
 2. Write a C API to use the engine library
 3. Add unit tests for the C API
 4. Multithread the generation of possible moves (optional)
@@ -33,6 +33,22 @@
 
 Russian draughts rules: https://en.wikipedia.org/wiki/Russian_draughts#Rules
 
+
+# The Solution
+
+1. Build a game engine library that fulfills the following specifications:
+   1. Builds on Linux.
+      - ...
+   2. Has a function that generates all the possible moves that can be played up to a specified number of moves.
+      - See 2.
+   3. Write an example that generates the decision tree for the following configuration:
+      - ...
+2. Write a C API to use the engine library
+   - ...
+3. Add unit tests for the C API
+   - ...
+4. Multithread the generation of possible moves (optional)
+   - ...
 
 
 # Analisys and Design
@@ -107,8 +123,21 @@ DFS is preferred for performance benchmarking of state-calculating algorythm, wh
 Rules define wins and draws for human players.
 From the perspective of engine there are next 3 different variants of game branch termination:
 - current side has no possible moves - it lost, the opposite side - wins;
-- loop detected - this board state was already processed
-- depth limit
+- depth limit;
+- cache hit - this board state was already processed.
+
+### Cache
+
+Cache as set of board states can slightly violate the requirements.
+For example, with max_depth=15:
+- if some board state cached at depth=12
+- and then same state occurs at depth=10
+- then it can't be skipped because there are 2 depth levels not calculated under given board state.
+
+But probably the distance in depth between occurancies of equal board states can't be critically huge,
+because number of items on board not increase in time.
+
+Anyway this can be fixed, later.
 
 
 ## Unit-tests

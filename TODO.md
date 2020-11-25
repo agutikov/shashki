@@ -1,24 +1,29 @@
 
 
-2. unordered_set, google dense set 
-3. 2-threaded dfs with cache
-4. SIGINT, SIGTERM
-5. Multithreaded DFS
+
+1. Multithreaded DFS
+2. SIGINT, SIGTERM
    
-6. Cleanup, types, conversions, TODOs
+3. Build system, debug app, tool, boards number calculator, tests
+4. Cleanup, types, conversions, TODOs
    
-7. С interface
-8. Build system, debug app, tool, boards number calculator, tests
-9. Unit tests, coverage?
+5. С interface
+6.  Unit tests, coverage?
+7.  stats
+8.  doxygen
+9.  diffblue cover
 
 
-10. BFS
-11. Multithreaded BFS
-12. TODOs
-13. Cache as state->subseq_states mapping
-14. Global Cache
-15. SMT unit tests
-16. Optimization and generalization
+10. Fix cache depth violation
+11. Wht cache drops so much the Mboards/s?
+12. DFS with external cache in separate thread
+13. BFS
+14. Multithreaded BFS
+15. TODOs
+16. Cache as state->subseq_states mapping
+17. Global sharded Cache
+18. SMT unit tests
+19. Optimization and generalization
 
 
 

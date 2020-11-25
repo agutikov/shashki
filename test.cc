@@ -9,12 +9,22 @@
 #include <chrono>
 #include <map>
 #include <iostream>
+#include <iomanip>
 #include <initializer_list>
 #include <random>
+#include <unordered_set>
+#include <type_traits>
+#include <thread>
+#include <future>
+#include <ctime>
 
 #include <boost/range/adaptor/map.hpp>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/program_options.hpp>
+#include <boost/functional/hash.hpp>
+
+#include <google/dense_hash_set>
+#include <google/sparse_hash_set>
 
 #include <Judy.h>
 
@@ -24,7 +34,7 @@ namespace po = boost::program_options;
 using namespace std::string_literals;
 
 using namespace std::literals::chrono_literals;
-using Clock = std::chrono::steady_clock;
+using Clock = std::chrono::system_clock;
 
 
 typedef std::pair<int, int> X_t;
@@ -383,10 +393,13 @@ struct board_state_t
 
     std::array<board_side_t, 2> sides;
 
-
     explicit operator std::pair<uint64_t, uint64_t>() const
     {
-        return {uint64_t(sides[0]), uint64_t(sides[1])};
+        //return {uint64_t(sides[0]), uint64_t(sides[1])};
+        return {
+            (uint64_t(sides[0].kings) << 32) | sides[1].kings,
+            (uint64_t(sides[0].items) << 32) | sides[1].items
+        };
     }
 };
 
@@ -468,6 +481,7 @@ board_state_t rotate(const board_state_t& s)
 }
 //TODO: benchmark rotation
 
+
 board_state_t do_move(board_state_t state, uint32_t src, uint32_t dst)
 {
     state.sides[0].items &= ~src;
@@ -504,12 +518,18 @@ struct _board_states_generator
         _states(buffer)
     {}
 
-    void gen_next_states(const board_state_t& s)
+    _board_states_generator(const _board_states_generator&) = delete;
+    _board_states_generator(_board_states_generator&&) = delete;
+    _board_states_generator& operator=(const _board_states_generator&) = delete;
+    _board_states_generator& operator=(_board_states_generator&&) = delete;
+
+    size_t gen_next_states(const board_state_t& brd)
     {
-        cur_state = s;
+        cur_state = brd;
         occupied = cur_state.sides[0].items | cur_state.sides[1].items;
 
-        gen_states();
+        size_t count = gen_states();
+        return count;
     }
 
 private:
@@ -692,7 +712,7 @@ private:
         return saved_states;
     }
 
-    void gen_states()
+    size_t gen_states()
     {
         size_t saved_states = 0;
         const board_side_t& player = cur_state.sides[0];
@@ -709,17 +729,19 @@ private:
         // As capture is mandatory and can't be skipped
         // So first - try capture, and if no available captures - then try move
         if (saved_states) {
-            return;
+            return saved_states;
         }
 
         for (int item_index = 0; item_index < 32; item_index++) {
             uint32_t item = index2bitmap(item_index);
             if (item & player.kings) {
-                next_king_moves(item_index);
+                saved_states += next_king_moves(item_index);
             } else if (item & player.items) {
-                next_item_moves(item_index);
+                saved_states += next_item_moves(item_index);
             }
         }
+
+        return saved_states;
     }
 
     uint32_t occupied;
@@ -737,11 +759,24 @@ struct board_states_generator
         states(MAX_LEVEL_WIDTH),
         g(states)
     {}
+    
+    board_states_generator(board_states_generator&& other) :
+        states(std::move(other.states)),
+        g(states)
+    {}
 
-    const std::vector<board_state_t>& gen_next_states(const board_state_t& s)
+    board_states_generator(const board_states_generator& other) :
+        states(other.states),
+        g(states)
+    {}
+
+    board_states_generator& operator=(board_states_generator&&) = delete;
+    board_states_generator& operator=(const board_states_generator&) = delete;
+
+    const std::vector<board_state_t>& gen_next_states(const board_state_t& brd)
     {
         states.clear();
-        g.gen_next_states(s);
+        g.gen_next_states(brd);
         return states;
     }
 
@@ -754,20 +789,20 @@ private:
 
 struct judy_128_set
 {
-    bool insert(const std::pair<uint64_t, uint64_t>& v)
+    std::pair<void*, bool> insert(const std::pair<uint64_t, uint64_t>& v)
     {
         // insert or get
         void** pv = JudyLIns(&array, v.first, nullptr);
 
         if (pv == PJERR) {
-            return false;
+            return {nullptr, false};
         }
 
         int inserted = Judy1Set(pv, v.second, nullptr);
 
         _size += inserted;
         
-        return inserted;
+        return {nullptr, inserted == 1};
     }
 
     size_t size() const
@@ -856,7 +891,7 @@ struct stats
         _total_boards += w;
 
         if (w >= level_width_hist.size()) {
-            level_width_hist.resize(w + 2, 0);
+            level_width_hist.resize(w + 1, 0);
         }
         level_width_hist[w]++;
         
@@ -869,9 +904,9 @@ struct stats
         }
     }
 
-    void loop()
+    void cache_hit()
     {
-        loops++;
+        cache_hits++;
     }
 
     void depth_limit()
@@ -882,24 +917,46 @@ struct stats
     void print(Clock::time_point started)
     {
         float elapsed_s = total_seconds(Clock::now() - started);
-        printf("\nelapsed %fs\n\n", elapsed_s);
+        printf("\nelapsed: %fs\n", elapsed_s);
 
-        printf("total boards: %lu\n\n", _total_boards);
+        printf("total boards: %lu\n", _total_boards);
 
-        printf("%.2f Mboards/s\n\n", _total_boards / elapsed_s / 1000000);
+        printf("rate: %.2f Mboards/s\n\n", _total_boards / elapsed_s / 1000000);
 
-        printf("level width histogram:\n");
+        printf("level width (number of possible moves) histogram:\n");
         for (int w = 0; w < level_width_hist.size(); w++) {
             printf("%2d: %lu\n", w, level_width_hist[w]);
         }
         printf("\n");
 
-        printf("W wins: %lu; B wins: %lu; depth limits: %lu; loops: %lu\n", w_wins, b_wins, depth_limits, loops);
+        printf("W wins: %lu; B wins: %lu; depth limits: %lu; cache hits: %lu\n", w_wins, b_wins, depth_limits, cache_hits);
     }
 
     size_t total_boards() const
     {
         return _total_boards;
+    }
+
+    stats& operator+=(const stats& other)
+    {
+        _total_boards += other._total_boards;
+        w_wins += other.w_wins;
+        b_wins += other.b_wins;
+        depth_limits += other.depth_limits;
+        cache_hits += other.cache_hits;
+
+        if (other.level_width_hist.size() > level_width_hist.size()) {
+            level_width_hist.resize(other.level_width_hist.size(), 0);
+        }
+        std::transform(
+            level_width_hist.begin(),
+            level_width_hist.end(),
+            other.level_width_hist.begin(),
+            level_width_hist.begin(),
+            std::plus<>{}
+        );
+
+        return *this;
     }
 
 private:
@@ -908,10 +965,16 @@ private:
     size_t w_wins = 0;
     size_t b_wins = 0;
     size_t depth_limits = 0;
-    size_t loops = 0;
+    size_t cache_hits = 0;
 };
 
 
+using dense_cache = google::dense_hash_set<std::pair<uint64_t, uint64_t>, boost::hash<std::pair<uint64_t, uint64_t>>>;
+using judy_cache = judy_128_set;
+using std_cache = std::unordered_set<std::pair<uint64_t, uint64_t>, boost::hash<std::pair<uint64_t, uint64_t>>>;
+
+
+template<class Cache>
 struct DFS
 {
     DFS(size_t max_depth, 
@@ -921,7 +984,7 @@ struct DFS
         bool randomize = false,
         bool cache = false,
         bool print_win_path = false,
-        bool print_loop_board = false)
+        bool print_cache_hit_board = false)
     :
         max_depth(max_depth),
         randomize(randomize),
@@ -931,7 +994,7 @@ struct DFS
         stack(max_depth),
         enable_cache(cache),
         print_win_path(print_win_path),
-        print_loop_board(print_loop_board)
+        print_cache_hit_board(print_cache_hit_board)
     {
         std::mt19937 rng{std::random_device{}()};
         for (size_t i = 0; i < MAX_LEVEL_WIDTH; i++) {
@@ -942,12 +1005,12 @@ struct DFS
         }
 
         path.reserve(max_depth);
+
+        if constexpr (std::is_same<Cache, dense_cache>::value) {
+            boards_cache.set_empty_key({0, 0});
+        }
     }
 
-    const size_t boards_count_step = 1000000;
-    const Clock::duration status_print_period{2s};
-
-    //TODO:  move some args from ctor
     void do_search(const board_state_t& brd)
     {
         std::cout << std::boolalpha
@@ -956,7 +1019,7 @@ struct DFS
                   << ", max_width=" << max_width
                   << ", randomize=" << randomize
                   << ", cache=" << enable_cache 
-                  << ", print_loops=" << print_loop_board
+                  << ", print_cache_hits=" << print_cache_hit_board
                   << ", print_wins=" << print_win_path
                   << std::endl;
         printf("\n  Initial board:\n");
@@ -975,8 +1038,12 @@ struct DFS
 
         sts.print(started);
         if (enable_cache) {
-            printf("\nCached: %lu boards, Hits: %.2f%%\n", boards_cache.size(),
-                    100.0*(sts.total_boards() - boards_cache.size())/sts.total_boards());
+            printf("\nCached: %lu boards", boards_cache.size());
+            if (max_width > 0) {
+                printf("\n");
+            } else {
+                printf(", Hits: %.2f%%\n", 100.0*(sts.total_boards() - boards_cache.size())/sts.total_boards());
+            }
         }
     }
 
@@ -1024,9 +1091,10 @@ private:
         }
 
         if (enable_cache) {
-            if (!boards_cache.insert(std::pair<uint64_t, uint64_t>(brd))) {
-                sts.loop();
-                if (print_loop_board) {
+            auto ins_res = boards_cache.insert(std::pair<uint64_t, uint64_t>(brd));
+            if (!ins_res.second) {
+                sts.cache_hit();
+                if (print_cache_hit_board) {
                     printf("LOOP:\n");
                     print_board(brd, depth);
                 }
@@ -1043,13 +1111,13 @@ private:
 
     void _search_r(board_states_generator* sp, const board_state_t& brd, size_t depth)
     {
-        auto& v = sp->gen_next_states(brd);
-        sts.consume_level_width(v.size(), depth);
-
         handle_status();
         if (!running) {
             return;
         }
+
+        auto& v = sp->gen_next_states(brd);
+        sts.consume_level_width(v.size(), depth);
 
         if (v.size() == 0) {
             if (print_win_path) {
@@ -1085,9 +1153,6 @@ private:
 
                 size_t branch = 0;
                 for (const auto& next_brd : v) {
-                    if (!running) {
-                        break;
-                    }
                     _handle_brd(sp, next_brd, depth, branch++);
                 }
             }
@@ -1128,11 +1193,11 @@ private:
     
     std::vector<board_states_generator> stack;
 
-    bool enable_cache;
-    judy_128_set boards_cache;
+    const bool enable_cache;
+    Cache boards_cache;
 
-    bool print_win_path;
-    bool print_loop_board;
+    const bool print_win_path;
+    const bool print_cache_hit_board;
     std::vector<board_state_t> path;
 
     Clock::time_point started;
@@ -1143,6 +1208,304 @@ private:
     stats sts;
     
     std::vector<std::vector<size_t>> random_indexes;
+
+    const size_t boards_count_step = 1000000;
+    const Clock::duration status_print_period{2s};
+};
+
+//TODO: template with bool arg verbose
+
+struct search_config_t
+{
+    size_t max_depth;
+    Clock::time_point run_until;
+    size_t max_width = 0;
+    bool randomize = false;
+    bool cache = false;
+};
+
+
+typedef std::tuple<stats, bool> dfs_result_t;
+
+template<class Cache>
+struct DFS_worker
+{
+    DFS_worker(const search_config_t& cfg)
+    :
+        max_depth(cfg.max_depth),
+        randomize(cfg.randomize),
+        max_width(cfg.max_width),
+        run_until(cfg.run_until),
+        stack(cfg.max_depth),
+        enable_cache(cfg.cache)
+    {
+        std::mt19937 rng{std::random_device{}()};
+        for (size_t i = 0; i < MAX_LEVEL_WIDTH; i++) {
+            std::vector<size_t> v(i);
+            std::iota(v.begin(), v.end(), 0);
+            std::shuffle(v.begin(), v.end(), rng);
+            random_indexes.emplace_back(std::move(v));
+        }
+
+        if constexpr (std::is_same<Cache, dense_cache>::value) {
+            boards_cache.set_empty_key({0, 0});
+        }
+    }
+
+    //DFS_worker(const DFS_worker&) = delete;
+    //DFS_worker(DFS_worker&&) = delete;
+
+    // return stats and completion flag
+    dfs_result_t do_search(const std::vector<board_state_t>& boards, size_t depth)
+    {
+        running = true;
+        next_total_boards = boards_count_step;
+
+        for (const auto& brd : boards) {
+            _search_r(stack.data(), brd, depth);
+        }
+
+        return {sts, running};
+    }
+
+    auto get_callable(std::vector<board_state_t>&& boards, size_t depth)
+    {
+        return [b{std::forward<std::vector<board_state_t>>(boards)}, this, depth] () {
+            return do_search(b, depth);
+        };
+    }
+
+private:
+    void handle_status()
+    {
+        if (sts.total_boards() >= next_total_boards) {
+            next_total_boards += boards_count_step;
+            running = Clock::now() < run_until;
+        }
+    }
+
+    void _handle_brd(board_states_generator* sp, const board_state_t& brd, size_t depth, size_t branch)
+    {
+        if (enable_cache) {
+            auto ins_res = boards_cache.insert(std::pair<uint64_t, uint64_t>(brd));
+            if (!ins_res.second) {
+                sts.cache_hit();
+                return;
+            }
+        }
+
+        if (depth < max_depth) {
+            _search_r(sp, rotate(brd), depth);
+        } else {
+            sts.depth_limit();
+        }
+    }
+
+    void _search_r(board_states_generator* sp, const board_state_t& brd, size_t depth)
+    {
+        handle_status();
+        if (!running) {
+            return;
+        }
+
+        auto& v = sp->gen_next_states(brd);
+        sts.consume_level_width(v.size(), depth);
+
+        if (v.size() == 0) {
+            return;
+        }
+
+        // go deeper
+        depth++;
+        sp++;
+
+        if (max_width == 0) {
+            if (randomize) {
+                // Iterate all branches in random order
+
+                const auto& indexes = random_indexes[v.size()];
+                for (size_t i = 0; i < v.size(); i++) {
+                    size_t index = indexes[i];
+                    _handle_brd(sp, v[index], depth, index);
+                }
+            } else {
+                // Iterate all branches in normal order
+
+                size_t branch = 0;
+                for (const auto& next_brd : v) {
+                    _handle_brd(sp, next_brd, depth, branch++);
+                }
+            }
+        } else {
+            if (randomize) {
+                // Iterate limited number or branches in random order
+
+                size_t len = std::min(max_width, v.size());
+                const auto& indexes = random_indexes[v.size()];
+                for (size_t i = 0; i < len; i++) {
+                    size_t index = indexes[i];
+                    _handle_brd(sp, v[index], depth, index);
+                }
+            } else {
+                // Iterate limited number of branches - 1, 2 or 3
+                //TODO: do same as following split() does
+
+                _handle_brd(sp, v.front(), depth, 0);
+                if (max_width == 3 && v.size() >= 3) {
+                    size_t i = v.size() / 2;
+                    _handle_brd(sp, v[i], depth, i);
+                }
+                if (max_width >= 2 && v.size() >= 2) {
+                    _handle_brd(sp, v.back(), depth, v.size() - 1);
+                }
+            }
+        }
+    }
+
+    const size_t max_depth;
+    const size_t max_width;
+    const bool randomize;
+    const Clock::time_point run_until;
+    
+    std::vector<board_states_generator> stack;
+
+    const bool enable_cache;
+    Cache boards_cache;
+
+    size_t next_total_boards;
+    bool running;
+
+    stats sts;
+    
+    std::vector<std::vector<size_t>> random_indexes;
+
+    const size_t boards_count_step = 1000000;
+};
+
+
+std::vector<board_state_t> do_bfs_level(const std::vector<board_state_t>& boards, size_t depth, stats& sts)
+{
+    std::vector<board_state_t> next_boards; 
+    _board_states_generator g(next_boards);
+
+    next_boards.reserve(boards.size() * 8); // 8 - empirical multiplier
+
+    for (const auto& brd : boards) {
+        size_t w = g.gen_next_states(brd);
+        sts.consume_level_width(w, depth);
+    }
+
+    return next_boards;
+}
+
+void rotate_level(std::vector<board_state_t>& boards)
+{
+    for (auto& b : boards) {
+        b = rotate(b);
+    }
+}
+
+template<typename T>
+std::vector<std::vector<T>> split(const std::vector<T>& v, size_t num_chunks)
+{
+    std::vector<std::vector<T>> r;
+    r.reserve(num_chunks);
+
+    auto beg = v.begin();
+    auto en = v.end();
+
+    while (num_chunks > 0) {
+        size_t left = en - beg;
+        if (left == 0) {
+            break;
+        }
+        size_t len = left / num_chunks;
+        if (len == 0) {
+            break;
+        }
+        r.emplace_back(beg, beg + len);
+        beg += len;
+        num_chunks--;
+    }
+
+    return r;
+}
+
+void debug_split()
+{
+    std::vector<int> src(25);
+    std::iota(src.begin(), src.end(), 0);
+
+    for (int i = 1; i <= 10; i++) {
+        auto v = split(src, i);
+        printf("%lu: ", v.size());
+        for (const auto& x : v) {
+            printf("%lu, ", x.size());
+        }  
+        printf("\n");
+    }
+}
+
+template<class Cache>
+struct MTDFS
+{
+    MTDFS(size_t num_threads, const search_config_t& cfg, size_t min_initial_boards_per_thread = 20) :
+        min_initial_boards_per_thread(min_initial_boards_per_thread),
+        workers(num_threads, cfg)
+    {}
+
+    // Initial BFS step does not take into account search configuration 
+    void do_search(const board_state_t& brd)
+    {
+        printf("Multi-thread DFS\n");
+
+        stats sts;
+        auto started = Clock::now();
+
+        std::vector<std::future<dfs_result_t>> results;
+
+        std::vector<board_state_t> level{brd};
+        size_t depth = 0;
+
+        size_t min_level_size = workers.size() * min_initial_boards_per_thread;
+
+        while (level.size() < min_level_size) {
+            level = do_bfs_level(level, depth, sts);
+            depth++;
+            rotate_level(level);
+        }
+        printf("initial BFS finished\ndepth: %lu\nboards: %lu\n", depth, level.size());
+
+        auto splitted_level = split(level, workers.size());
+
+        size_t i = 0;
+        for (auto& v : splitted_level) {
+            results.emplace_back(
+                std::async(
+                    std::launch::async,
+                    workers[i].get_callable(std::move(v), depth)
+                )
+            );
+            i++;
+        }
+
+        bool completed = true;
+        for (auto& f : results) {
+            auto r = f.get();
+            sts += std::get<0>(r);
+            completed |= std::get<1>(r);
+        }
+
+        //TODO: progress
+
+        printf("\n%s\n", completed ? "Completed!" : "Terminated.");
+        sts.print(started);
+    }
+
+private:
+    size_t min_initial_boards_per_thread;
+
+    std::vector<DFS_worker<Cache>> workers;
 };
 
 
@@ -1489,11 +1852,20 @@ const std::map<std::string, Clock::duration> readable_duration_t::units =
     {"d", 24h}
 };
 
+
+void do_dfs_cmd()
+{
+    //TODO: all args to struct cfg_t
+}
+
+
+
 int main(int argc, const char* argv[])
 {
     //debug();
     //calc_all();
     //debug_judy_128_set();
+    //debug_split();
     //return 0;
 
 
@@ -1505,15 +1877,18 @@ int main(int argc, const char* argv[])
     bool randomize;
     size_t max_width;
     bool cache;
-    bool print_loops;
+    bool print_cache_hits;
     bool print_wins;
+    std::string cache_impl;
+    size_t n_threads;
 
     std::string header = "DTE - Decision Tree Explorer (Russian Draughts)\n";
     header += "\nUsage: ";
     header += argv[0];
-    header += " dfs | ... [options]\n";
+    header += " dfs | mtdfs [options]\n";
     header += "\nCommands:\n";
     header += "  dfs - Depth-first search\n";
+    header += "  mtdfs - Multi-threaded depth-first search\n";
     header += "\nOptions";
 
     std::string timeout_desc = "timeout, default=10s\nunits = "s + readable_duration_t::all_units(" | ") + "\ndefault unit = s";
@@ -1526,9 +1901,11 @@ int main(int argc, const char* argv[])
         ("timeout,t", po::value<readable_duration_t>(&timeout), timeout_desc.c_str())
         ("randomize,r", po::bool_switch(&randomize), "randomize braches iteration")
         ("max-width,w", po::value<size_t>(&max_width)->default_value(0), "max branches iterate, 0 - all\nwith randomize=false max-width = 1 | 2 | 3")
-        ("cache,c", po::bool_switch(&cache), "enable board cache and loop detection")
-        ("print-loops,L", po::bool_switch(&print_loops), "print board for loop case")
+        ("cache,c", po::bool_switch(&cache), "enable board cache and cache_hit detection")
+        ("print-cache-hits,H", po::bool_switch(&print_cache_hits), "print board for cache hit case")
         ("print-wins,W", po::bool_switch(&print_wins), "print entire path for win case")
+        ("cache-impl,C", po::value<std::string>(&cache_impl)->default_value("judy"), "cache implementation: std | dense | judy")
+        ("threads,j", po::value<size_t>(&n_threads)->default_value(1), "number of threads, for mtdfs")
     ;
 
     po::options_description hidden_opts;
@@ -1559,11 +1936,58 @@ int main(int argc, const char* argv[])
     }
 
     if (command == "dfs") {
-        DFS x(max_depth, verbose,
-              timeout.value,
-              max_width, randomize, cache, print_wins, print_loops);
+        if (cache_impl == "std") {
 
-        x.do_search(initial_board);
+            DFS<std_cache> x(max_depth, verbose, timeout.value,
+                             max_width, randomize, cache, print_wins, print_cache_hits);
+            x.do_search(initial_board);
+
+        } else if (cache_impl == "dense") {
+
+            DFS<dense_cache> x(max_depth, verbose, timeout.value,
+                               max_width, randomize, cache, print_wins, print_cache_hits);
+            x.do_search(initial_board);
+
+        } else if (cache_impl == "judy") {
+
+            DFS<judy_cache> x(max_depth, verbose, timeout.value,
+                              max_width, randomize, cache, print_wins, print_cache_hits);
+            x.do_search(initial_board);
+
+        } else {
+            std::cerr << "unknown cache implementatin: \"" << cache_impl << "\"" << std::endl;
+            std::cerr << visible_opts << std::endl;
+        }
+
+    } else if (command == "mtdfs") {
+
+        search_config_t scfg{
+            max_depth,
+            Clock::now() + std::chrono::duration_cast<Clock::duration>(timeout.value),
+            max_width,
+            randomize,
+            cache
+        };
+
+        if (cache_impl == "std") {
+
+            MTDFS<std_cache> x(n_threads, scfg);
+            x.do_search(initial_board);
+
+        } else if (cache_impl == "dense") {
+
+            MTDFS<dense_cache> x(n_threads, scfg);
+            x.do_search(initial_board);
+
+        } else if (cache_impl == "judy") {
+
+            MTDFS<judy_cache> x(n_threads, scfg);
+            x.do_search(initial_board);
+
+        } else {
+            std::cerr << "unknown cache implementatin: \"" << cache_impl << "\"" << std::endl;
+            std::cerr << visible_opts << std::endl;
+        }
 
     } else {
         if (vm.count("command") == 0) {
