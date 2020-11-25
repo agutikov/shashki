@@ -1,8 +1,5 @@
 
 
-
-1. Multithreaded DFS
-2. SIGINT, SIGTERM
    
 3. Build system, debug app, tool, boards number calculator, tests
 4. Cleanup, types, conversions, TODOs

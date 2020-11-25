@@ -17,6 +17,7 @@
 #include <thread>
 #include <future>
 #include <ctime>
+#include <csignal>
 
 #include <boost/range/adaptor/map.hpp>
 #include <boost/algorithm/string/join.hpp>
@@ -968,18 +969,25 @@ private:
     size_t cache_hits = 0;
 };
 
+void print_tp(const Clock::time_point& tp)
+{
+    auto t = Clock::to_time_t(tp);
+    std::cout << std::put_time(std::localtime(&t), "%F %T") << std::endl;
+}
+
 
 using dense_cache = google::dense_hash_set<std::pair<uint64_t, uint64_t>, boost::hash<std::pair<uint64_t, uint64_t>>>;
 using judy_cache = judy_128_set;
 using std_cache = std::unordered_set<std::pair<uint64_t, uint64_t>, boost::hash<std::pair<uint64_t, uint64_t>>>;
 
+bool g_running = true;
 
 template<class Cache>
 struct DFS
 {
     DFS(size_t max_depth, 
         bool verbose = true,
-        std::chrono::duration<float> timeout = 5min,
+        Clock::duration timeout = 5min,
         size_t max_width = 0,
         bool randomize = false,
         bool cache = false,
@@ -1060,6 +1068,7 @@ private:
                 if (!running) {
                     printf("Timeout.\n");
                 }
+                running = running && g_running;
             }
         }
     }
@@ -1189,7 +1198,7 @@ private:
     const size_t max_width;
     const bool randomize;
     const bool verbose;
-    const std::chrono::duration<float> timeout;
+    const Clock::duration timeout;
     
     std::vector<board_states_generator> stack;
 
@@ -1252,8 +1261,6 @@ struct DFS_worker
         }
     }
 
-    //DFS_worker(const DFS_worker&) = delete;
-    //DFS_worker(DFS_worker&&) = delete;
 
     // return stats and completion flag
     dfs_result_t do_search(const std::vector<board_state_t>& boards, size_t depth)
@@ -1281,6 +1288,7 @@ private:
         if (sts.total_boards() >= next_total_boards) {
             next_total_boards += boards_count_step;
             running = Clock::now() < run_until;
+            running = running && g_running;
         }
     }
 
@@ -1493,7 +1501,7 @@ struct MTDFS
         for (auto& f : results) {
             auto r = f.get();
             sts += std::get<0>(r);
-            completed |= std::get<1>(r);
+            completed = completed & std::get<1>(r);
         }
 
         //TODO: progress
@@ -1792,7 +1800,7 @@ void calc_all()
 
 struct readable_duration_t
 {
-    std::chrono::duration<float> value;
+    Clock::duration value;
     
     readable_duration_t() = default;
 
@@ -1831,7 +1839,7 @@ struct readable_duration_t
             unit = it->second;
         }
 
-        d.value = unit * v;
+        d.value = std::chrono::duration_cast<Clock::duration>(unit * v);
 
         return in;
     }
@@ -1858,7 +1866,10 @@ void do_dfs_cmd()
     //TODO: all args to struct cfg_t
 }
 
-
+void signal_handler(int signum)
+{
+   g_running = false;
+}
 
 int main(int argc, const char* argv[])
 {
@@ -1867,6 +1878,9 @@ int main(int argc, const char* argv[])
     //debug_judy_128_set();
     //debug_split();
     //return 0;
+
+    signal(SIGINT, signal_handler);  
+    signal(SIGTERM, signal_handler); 
 
 
 
@@ -1963,7 +1977,7 @@ int main(int argc, const char* argv[])
 
         search_config_t scfg{
             max_depth,
-            Clock::now() + std::chrono::duration_cast<Clock::duration>(timeout.value),
+            Clock::now() + timeout.value,
             max_width,
             randomize,
             cache
