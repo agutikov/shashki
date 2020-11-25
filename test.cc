@@ -939,7 +939,7 @@ struct stats
         return _total_boards;
     }
 
-    stats& operator+=(const stats& other)
+    stats& operator+=(stats& other)
     {
         _total_boards += other._total_boards;
         w_wins += other.w_wins;
@@ -950,6 +950,10 @@ struct stats
         if (other.level_width_hist.size() > level_width_hist.size()) {
             level_width_hist.resize(other.level_width_hist.size(), 0);
         }
+        if (other.level_width_hist.size() < level_width_hist.size()) {
+            other.level_width_hist.resize(level_width_hist.size(), 0);
+        }
+
         std::transform(
             level_width_hist.begin(),
             level_width_hist.end(),
