@@ -915,16 +915,17 @@ struct stats
         depth_limits++;
     }
 
-    void print(Clock::time_point started)
+    void print(Clock::time_point started, size_t j)
     {
         float elapsed_s = total_seconds(Clock::now() - started);
         printf("\nelapsed: %fs\n", elapsed_s);
 
         printf("total boards: %lu\n", _total_boards);
 
-        printf("rate: %.2f Mboards/s\n\n", _total_boards / elapsed_s / 1000000);
+        printf("rate: %.2f Mboards/s\n", _total_boards / elapsed_s / 1000000);
+        printf("rate/thread: %.2f Mboards/s\n", _total_boards / elapsed_s / 1000000 / j);
 
-        printf("level width (number of possible moves) histogram:\n");
+        printf("\nlevel width (number of possible moves) histogram:\n");
         for (int w = 0; w < level_width_hist.size(); w++) {
             printf("%2d: %lu\n", w, level_width_hist[w]);
         }
@@ -1044,7 +1045,7 @@ struct DFS
 
         _search_r(stack.data(), brd, 0);
 
-        sts.print(started);
+        sts.print(started, 1);
         if (enable_cache) {
             printf("\nCached: %lu boards", boards_cache.size());
             if (max_width > 0) {
@@ -1507,7 +1508,7 @@ struct MTDFS
         //TODO: progress
 
         printf("\n%s\n", completed ? "Completed!" : "Terminated.");
-        sts.print(started);
+        sts.print(started, workers.size());
     }
 
 private:
