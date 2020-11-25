@@ -91,7 +91,7 @@ constexpr auto gen_pos_table()
 
 const std::array<X_t, 32> pos_table = gen_pos_table();
 
-const X_t& index2pos(int i)
+constexpr auto index2pos(int i)
 {
     return pos_table[i];
 } 
@@ -299,7 +299,7 @@ constexpr auto gen_king_captures()
     std::array<std::array<std::pair<X_t, X_t>, 6>, 4> zip;
     for (int i = 0; i < 4; i++) {
         std::transform(minimal_moves[i].begin(), minimal_moves[i].end(), captures[i].begin(), zip[i].begin(),
-            [] (auto aa, auto bb) {
+            [] (auto aa, auto bb) constexpr {
                 return std::pair<X_t, X_t>(aa, bb);
             }
         );
