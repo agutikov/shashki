@@ -21,11 +21,10 @@
 
 #include <boost/range/adaptor/map.hpp>
 #include <boost/algorithm/string/join.hpp>
-#include <boost/program_options.hpp>
 #include <boost/functional/hash.hpp>
+#include <boost/program_options.hpp>
 
 #include <google/dense_hash_set>
-#include <google/sparse_hash_set>
 
 #include <Judy.h>
 
@@ -319,7 +318,7 @@ constexpr auto gen_king_captures()
 
             // fill possible captures for this direction
             int c_i = 0;
-            for (int c_index = 0; c_index < dir_zip.size(); c_index++) {
+            for (size_t c_index = 0; c_index < dir_zip.size(); c_index++) {
                 auto c = dir_zip[c_index];
                 auto capture = x + c.second;
                 auto min_dst = x + c.first;
@@ -329,7 +328,7 @@ constexpr auto gen_king_captures()
 
                     // and fill possible jump destinations for this capture
                     int j_i = 0;
-                    for (int j_index = c_index; j_index < dir_zip.size(); j_index++) {
+                    for (size_t j_index = c_index; j_index < dir_zip.size(); j_index++) {
                         auto j = dir_zip[j_index];
                         auto dst = x + j.first;
                         if (is_valid(dst)) {
@@ -926,8 +925,8 @@ struct stats
         printf("rate/thread: %.2f Mboards/s\n", _total_boards / elapsed_s / 1000000 / j);
 
         printf("\nlevel width (number of possible moves) histogram:\n");
-        for (int w = 0; w < level_width_hist.size(); w++) {
-            printf("%2d: %lu\n", w, level_width_hist[w]);
+        for (size_t w = 0; w < level_width_hist.size(); w++) {
+            printf("%2lu: %lu\n", w, level_width_hist[w]);
         }
         printf("\n");
 
@@ -1200,8 +1199,8 @@ private:
     }
 
     const size_t max_depth;
-    const size_t max_width;
     const bool randomize;
+    const size_t max_width;
     const bool verbose;
     const Clock::duration timeout;
     
@@ -1376,8 +1375,8 @@ private:
     }
 
     const size_t max_depth;
-    const size_t max_width;
     const bool randomize;
+    const size_t max_width;
     const Clock::time_point run_until;
     
     std::vector<board_states_generator> stack;
@@ -1513,6 +1512,8 @@ struct MTDFS
 
         printf("\n%s\n", completed ? "Completed!" : "Terminated.");
         sts.print(started, workers.size());
+
+        //TODO: fater destroy cache
     }
 
 private:
@@ -1594,7 +1595,7 @@ void debug()
     for (int i = 0; i < 32; i++) {
         printf("%2d %08x -> ", i, 1 << i);
         const auto& a = tables.fwd_moves[i];
-        int j = 0;
+        size_t j = 0;
         for (uint32_t v = a[j]; v != 0 && j < a.size(); v = a[++j]) {
             printf("%08x, ", v);
         }
@@ -1604,7 +1605,7 @@ void debug()
     for (int i = 0; i < 32; i++) {
         printf("%2d %08x -> ", i, 1 << i);
         const auto& a = tables.captures[i];
-        int j = 0;
+        size_t j = 0;
         for (auto v = a[j]; std::get<0>(v) != 0 && j < a.size(); v = a[++j]) {
             printf("%08x_%d, ", std::get<0>(v), std::get<1>(v));
         }
@@ -1615,7 +1616,7 @@ void debug()
         printf("%2d %08x -> ", i, 1 << i);
         const auto& a = tables.king_moves[i];
         for (const auto& b : a) {
-            int j = 0;
+            size_t j = 0;
             printf("[");
             for (uint32_t v = b[j]; v != 0 && j < b.size(); v = b[++j]) {
                 printf("%s%08x", j == 0 ? "" : ", ", v);
@@ -1629,7 +1630,7 @@ void debug()
         printf("%2d %08x -> ", i, 1 << i);
         const auto& a = tables.king_captures[i];
         for (const auto& b : a) {
-            int j = 0;
+            size_t j = 0;
             printf("[");
             for (auto v = b[j]; v.first != 0 && j < b.size(); v = b[++j]) {
                 printf("%s{%08x, [", j == 0 ? "" : ", ", v.first);
@@ -1901,7 +1902,7 @@ int main(int argc, const char* argv[])
     std::string cache_impl;
     size_t n_threads;
 
-    std::string header = "DTE - Decision Tree Explorer (Russian Draughts)\n";
+    std::string header = "DTS - Decision Tree Statistics (Russian Draughts)\n";
     header += "\nUsage: ";
     header += argv[0];
     header += " dfs | mtdfs [options]\n";

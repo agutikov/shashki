@@ -6,21 +6,23 @@
    
 5. С interface
 6.  Unit tests, coverage?
-7.  stats
-8.  doxygen
-9.  diffblue cover
+7.  graphs
+8.  stats
+9.  doxygen
+10. Judy1Set -> plain trie
+11. diffblue cover
 
 
-10. Fix cache depth violation
-11. Wht cache drops so much the Mboards/s?
-12. DFS with external cache in separate thread
-13. BFS
-14. Multithreaded BFS
-15. TODOs
-16. Cache as state->subseq_states mapping
-17. Global sharded Cache
-18. SMT unit tests
-19. Optimization and generalization
+12. Fix cache depth violation
+13. Wht cache drops so much the Mboards/s?
+14. DFS with external cache in separate thread
+15. BFS
+16. Multithreaded BFS
+17. TODOs
+18. Cache as state->subseq_states mapping
+19. Global sharded Cache
+20. SMT unit tests
+21. Optimization and generalization
 
 
 
