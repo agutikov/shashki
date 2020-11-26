@@ -1,8 +1,9 @@
 
 
 4. Cleanup, types, conversions, TODOs
-   1. brd_point_t, brd_index_t, brd_item_t
+   1. brd_2d_vector_t, brd_index_t, brd_item_t
    2. brd_map_t
+   3. remove fill(...) tables
    
 5. С interface
 6.  Unit tests, coverage?

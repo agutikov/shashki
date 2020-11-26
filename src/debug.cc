@@ -85,20 +85,20 @@ void debug_depth(board_state_t brd, size_t depth)
 void debug()
 {
     int i = 0;
-    for (auto pos : pos_table) {
-        printf("%2d : {%d,%d}\n", i++, pos.first, pos.second);
+    for (auto pos : brd_1d_to_2d_table) {
+        printf("%2d : {%d,%d}\n", i++, pos.x, pos.y);
     }
 
     for (int Y = 0; Y < 8; Y += 2) {
         int y = Y;
         for (int x = 0; x < 8; x++) {
-            printf("%2d:%08x:{%d,%d} -> ", pos2index({x, y}), pos2bitmap({x, y}), x, y);
-            X_t _x(x, y);
-            X_t moves[4] = {{-1, -1}, {1, -1}, {-1, 1}, {1, 1}};
+            printf("%2d:%08x:{%d,%d} -> ", brd_index_t(brd_2d_vector_t(x, y)).index, brd_item_t(brd_2d_vector_t(x, y)).mask, x, y);
+            brd_2d_vector_t _x{x, y};
+            brd_2d_vector_t moves[4] = {{-1, -1}, {1, -1}, {-1, 1}, {1, 1}};
             for (auto move : moves) {
-                X_t t = _x + move;
-                if (is_valid(t)) {
-                    printf("%2d:%08x:{%d,%d}, ", pos2index(t), pos2bitmap(t), t.first, t.second);
+                brd_2d_vector_t t = _x + move;
+                if (t) {
+                    printf("%2d:%08x:{%d,%d}, ", brd_index_t(t).index, brd_item_t(t).mask, t.x, t.y);
                 }
             }
 
@@ -111,10 +111,10 @@ void debug()
     printf("fwd_moves:\n");
     for (int i = 0; i < 32; i++) {
         printf("%2d %08x -> ", i, 1 << i);
-        const auto& a = tables.fwd_moves[i];
+        const auto& a = tables.fwd_destinations[i];
         size_t j = 0;
-        for (uint32_t v = a[j]; v != 0 && j < a.size(); v = a[++j]) {
-            printf("%08x, ", v);
+        for (auto v = a[j]; v && j < a.size(); v = a[++j]) {
+            printf("%08x, ", v.mask);
         }
         printf("\n");
     }
@@ -123,8 +123,8 @@ void debug()
         printf("%2d %08x -> ", i, 1 << i);
         const auto& a = tables.captures[i];
         size_t j = 0;
-        for (auto v = a[j]; std::get<0>(v) != 0 && j < a.size(); v = a[++j]) {
-            printf("%08x_%d, ", std::get<0>(v), std::get<1>(v));
+        for (auto v = a[j]; std::get<0>(v) && j < a.size(); v = a[++j]) {
+            printf("%08x_%d, ", std::get<0>(v).mask, std::get<1>(v).index);
         }
         printf("\n");
     }
@@ -135,8 +135,8 @@ void debug()
         for (const auto& b : a) {
             size_t j = 0;
             printf("[");
-            for (uint32_t v = b[j]; v != 0 && j < b.size(); v = b[++j]) {
-                printf("%s%08x", j == 0 ? "" : ", ", v);
+            for (auto v = b[j]; v && j < b.size(); v = b[++j]) {
+                printf("%s%08x", j == 0 ? "" : ", ", v.mask);
             }
             printf("], ");
         }
@@ -149,14 +149,14 @@ void debug()
         for (const auto& b : a) {
             size_t j = 0;
             printf("[");
-            for (auto v = b[j]; v.first != 0 && j < b.size(); v = b[++j]) {
-                printf("%s{%08x, [", j == 0 ? "" : ", ", v.first);
+            for (auto v = b[j]; v.first && j < b.size(); v = b[++j]) {
+                printf("%s{%08x, [", j == 0 ? "" : ", ", v.first.mask);
                 int k = 0;
                 for (auto dst : v.second) {
-                    if (dst < 0) {
+                    if (!dst) {
                         break;
                     }
-                    printf("%s%d", k++ == 0 ? "" : ", ", dst);
+                    printf("%s%d", k++ == 0 ? "" : ", ", dst.index);
                 }
                 printf("]}");
             }
@@ -167,28 +167,28 @@ void debug()
 
     printf("fwd_move_masks:\n");
     for (int i = 0; i < 32; i++) {
-        printf("%2d %08x -> %08x\n", i, 1 << i, tables.fwd_move_masks[i]);
+        printf("%2d %08x -> %08x\n", i, 1 << i, tables.fwd_dst_masks[i].mask);
     }
     printf("capture_move_masks:\n");
     for (int i = 0; i < 32; i++) {
-        printf("%2d %08x -> %08x\n", i, 1 << i, tables.capture_move_masks[i]);
+        printf("%2d %08x -> %08x\n", i, 1 << i, tables.capture_move_masks[i].mask);
     }
     printf("capture_masks:\n");
     for (int i = 0; i < 32; i++) {
-        printf("%2d %08x -> %08x\n", i, 1 << i, tables.capture_masks[i]);
+        printf("%2d %08x -> %08x\n", i, 1 << i, tables.capture_masks[i].mask);
     }
     printf("king_move_masks:\n");
     for (int i = 0; i < 32; i++) {
-        printf("%2d %08x -> %08x\n", i, 1 << i, tables.king_move_masks[i]);
+        printf("%2d %08x -> %08x\n", i, 1 << i, tables.king_move_masks[i].mask);
     }
 
 
-    for (int index = 0; index < 32; index++) {
-        auto x = index2pos(index);
-        printf("%d,%d\n", x.first, x.second);
+    for (brd_index_t index = 0; index; ++index) {
+        auto x = brd_2d_vector_t(index);
+        printf("%d,%d\n", x.x, x.y);
     }
-    for (moves_iter<4> it({5, 7}, short_captures); it; ++it) {
-        printf("%d,%d\n", it->first, it->second);
+    for (const auto& x : brd_1d_to_2d_table) {
+        printf("%d,%d\n", x.x, x.y);
     }
 
 
