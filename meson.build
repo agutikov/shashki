@@ -18,10 +18,8 @@ assert(cxx.has_header('Judy.h'), 'judy array headers required, please install e.
 
 all_deps = [thread_dep, judy_lib_dep, boost_dep, boost_po_dep]
 
-dts_sources = files('dts.cc')
+inc = include_directories('include')
 
-executable('dts', dts_sources, dependencies: all_deps)
+subdir('src')
 
-executable('count-boards', 'count_boards.cc')
-
-executable('debug', 'debug.cc', dependencies: all_deps)
+subdir('test')

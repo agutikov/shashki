@@ -6,8 +6,11 @@
 #include <vector>
 #include <algorithm>
 
-
+// 2-dimentional coordinate of draughts item on board
+// each coordinate starts from 0
 typedef std::pair<int, int> X_t;
+
+
 
 constexpr X_t operator+(const X_t& l, const X_t& r)
 {   
@@ -58,7 +61,7 @@ constexpr auto gen_pos_table()
     return r;
 }
 
-const std::array<X_t, 32> pos_table = gen_pos_table();
+inline const std::array<X_t, 32> pos_table = gen_pos_table();
 
 constexpr auto index2pos(int i)
 {
@@ -126,11 +129,11 @@ constexpr auto product(const std::array<int, L>& x)
     return r;
 }
 
-const std::array<X_t, 2> fwd_directions{X_t{-1,  1}, X_t{1,  1}};
-const std::array<X_t, 4> all_directions = product(std::array<int, 2>{-1, 1});
+inline const std::array<X_t, 2> fwd_directions{X_t{-1,  1}, X_t{1,  1}};
+inline const std::array<X_t, 4> all_directions = product(std::array<int, 2>{-1, 1});
 
-const std::array<X_t, 4> short_captures_dst = product(std::array<int, 2>{-2, 2});
-const std::array<X_t, 4> short_captures = product(std::array<int, 2>{-1, 1});
+inline const std::array<X_t, 4> short_captures_dst = product(std::array<int, 2>{-2, 2});
+inline const std::array<X_t, 4> short_captures = product(std::array<int, 2>{-1, 1});
 
 template<size_t L>
 constexpr auto gen_moves(const std::array<X_t, L>& moves)
@@ -161,9 +164,9 @@ constexpr auto product(const std::array<X_t, L1>& x, const std::array<int, L2>& 
     return r;
 }
 
-const std::array<X_t, 28> long_moves = product(all_directions, std::array<int, 7>{1, 2, 3, 4, 5, 6, 7});
-const std::array<X_t, 24> long_captures = product(all_directions, std::array<int, 6>{1, 2, 3, 4, 5, 6});
-const std::array<X_t, 24> long_jumps = product(all_directions, std::array<int, 6>{2, 3, 4, 5, 6, 7});
+inline const std::array<X_t, 28> long_moves = product(all_directions, std::array<int, 7>{1, 2, 3, 4, 5, 6, 7});
+inline const std::array<X_t, 24> long_captures = product(all_directions, std::array<int, 6>{1, 2, 3, 4, 5, 6});
+inline const std::array<X_t, 24> long_jumps = product(all_directions, std::array<int, 6>{2, 3, 4, 5, 6, 7});
 
 template<size_t L>
 constexpr auto moves_mask(const std::array<X_t, L>& moves)
@@ -322,7 +325,7 @@ constexpr auto gen_king_captures()
 
 //TODO: Generalisation: use same function for items and kings but different control structure
 
-const struct tables_t
+inline const struct tables_t
 {
     //TODO: RENAME
 
@@ -374,9 +377,9 @@ struct board_state_t
 
 };
 
-const board_state_t initial_board = {board_side_t{0, 0x0FFF}, board_side_t{0, 0xFFF00000}};
+inline const board_state_t initial_board = {board_side_t{0, 0x0FFF}, board_side_t{0, 0xFFF00000}};
 
-const int format_table[8][8] = {
+inline const int format_table[8][8] = {
     {-1, 28, -1, 29, -1, 30, -1, 31},
     {24, -1, 25, -1, 26, -1, 27, -1},
     {-1, 20, -1, 21, -1, 22, -1, 23},
@@ -414,7 +417,7 @@ void print(const board_state_t& s)
 }
 
 // https://stackoverflow.com/questions/746171/efficient-algorithm-for-bit-reversal-from-msb-lsb-to-lsb-msb-in-c
-const uint8_t bit_reverse_table_256[] = 
+inline const uint8_t bit_reverse_table_256[] = 
 {
     0x00, 0x80, 0x40, 0xC0, 0x20, 0xA0, 0x60, 0xE0, 0x10, 0x90, 0x50, 0xD0, 0x30, 0xB0, 0x70, 0xF0, 
     0x08, 0x88, 0x48, 0xC8, 0x28, 0xA8, 0x68, 0xE8, 0x18, 0x98, 0x58, 0xD8, 0x38, 0xB8, 0x78, 0xF8, 

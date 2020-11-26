@@ -1,8 +1,8 @@
 
 
-   
-3. Build system, debug app, tool, boards number calculator, tests
 4. Cleanup, types, conversions, TODOs
+   1. brd_point_t, brd_index_t, brd_item_t
+   2. brd_map_t
    
 5. С interface
 6.  Unit tests, coverage?
