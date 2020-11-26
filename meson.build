@@ -16,7 +16,12 @@ assert(cxx.has_header('google/dense_hash_set'), 'google sparsehash required, ple
 judy_lib_dep = declare_dependency(link_args: '-lJudy')
 assert(cxx.has_header('Judy.h'), 'judy array headers required, please install e.g. "apt install libjudy-dev"')
 
-dts_sources = files('dts.cc')
-dts_deps = [thread_dep, judy_lib_dep, boost_dep, boost_po_dep]
+all_deps = [thread_dep, judy_lib_dep, boost_dep, boost_po_dep]
 
-executable('dts', dts_sources, dependencies: dts_deps)
+dts_sources = files('dts.cc')
+
+executable('dts', dts_sources, dependencies: all_deps)
+
+executable('count-boards', 'count_boards.cc')
+
+executable('debug', 'debug.cc', dependencies: all_deps)
