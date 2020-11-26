@@ -2,7 +2,7 @@
 project('shashki', ['c', 'cpp'],
     version: '0.1',
     license: 'MIT',
-    default_options: ['cpp_std=c++17'])
+    default_options: ['cpp_std=c++17', 'buildtype=release'])
 
 
 thread_dep = dependency('threads')
