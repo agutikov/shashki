@@ -7,8 +7,25 @@
 #include "utils.h"
 #include "draughts.h"
 
+extern "C" {
+#include "draughts_c.h"
+}
 
+void debug_c()
+{
+    boards_t bb;
+    int r = generate_moves(&bb, get_initial_board(), 1);
+    printf("generate_moves: %d\n", r);
 
+    for (size_t i = 0; i < bb.size; i++) {
+        print_board(bb.data[i], 0);
+    }
+
+    printf("=========================\n");
+
+    r = walk_all_moves(get_initial_board(), 1, print_board, 2);
+    printf("walk_all_moves: %d\n", r);
+}
 
 void debug_split()
 {
@@ -213,6 +230,8 @@ int main()
     debug();
     debug_judy_128_set();
     debug_split();
+
+    debug_c();
     
     return 0;
 }

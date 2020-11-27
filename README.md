@@ -38,17 +38,20 @@ Russian draughts rules: https://en.wikipedia.org/wiki/Russian_draughts#Rules
 
 1. Build a game engine library that fulfills the following specifications:
    1. Builds on Linux.
-      - ...
+      - meson.build
    2. Has a function that generates all the possible moves that can be played up to a specified number of moves.
       - See 2.
    3. Write an example that generates the decision tree for the following configuration:
-      - ...
+      - main.cc, dfs.h
+      - command-line tool: ./build/src/dts --help
 2. Write a C API to use the engine library
-   - ...
+   - include/draughts_c.h
+   - there were concerns about proposed interface, see below
 3. Add unit tests for the C API
-   - ...
+   - ... (yet not implemented)
 4. Multithread the generation of possible moves (optional)
-   - ...
+   - main.cc, mtdfs.h
+   - command-line tool: ./build/src/dts --help
 
 
 # Analisys and Design

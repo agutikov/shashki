@@ -16,7 +16,7 @@ assert(cxx.has_header('google/dense_hash_set'), 'google sparsehash required, ple
 judy_lib_dep = declare_dependency(link_args: '-lJudy')
 assert(cxx.has_header('Judy.h'), 'judy array headers required, please install e.g. "apt install libjudy-dev"')
 
-all_deps = [thread_dep, judy_lib_dep, boost_dep, boost_po_dep]
+external_deps = [thread_dep, judy_lib_dep, boost_dep, boost_po_dep]
 
 inc = include_directories('include')
 

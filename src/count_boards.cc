@@ -2,7 +2,7 @@
 #include <cstdint>
 #include <array>
 
-constexpr int numberOfSetBits(uint32_t i)
+constexpr int count_bits(uint32_t i)
 {
      i = i - ((i >> 1) & 0x55555555);
      i = (i & 0x33333333) + ((i >> 2) & 0x33333333);
@@ -23,7 +23,7 @@ constexpr auto make_hist()
     std::array<std::array<int, 32>, 32> hist{{0}};
     size_t m = 0;
     for (uint32_t i = 1; i != 0; i++) {
-        int n = numberOfSetBits(i);
+        int n = count_bits(i);
         if (n <= 1 && i != 1) {
             hist[m+1] = hist[m];
             m++;

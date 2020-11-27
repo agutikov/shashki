@@ -15,8 +15,6 @@ struct board_side_t
     brd_map_t kings;
     brd_map_t items;
 
-    board_side_t() = default;
-
     explicit operator uint64_t() const
     {
         return uint64_t(kings.mask) << 32 | items.mask;

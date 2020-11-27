@@ -1,19 +1,5 @@
 #include <cstdio>
-#include <array>
-#include <utility>
-#include <vector>
-#include <algorithm>
-#include <tuple>
-#include <stack>
-#include <chrono>
-#include <map>
 #include <iostream>
-#include <initializer_list>
-#include <random>
-#include <unordered_set>
-#include <type_traits>
-#include <thread>
-#include <future>
 #include <csignal>
 
 #include <boost/program_options.hpp>
@@ -21,6 +7,7 @@
 #include "utils.h"
 #include "draughts.h"
 #include "dfs.h"
+#include "mtdfs.h"
 
 using namespace std::string_literals;
 
@@ -103,53 +90,50 @@ int main(int argc, const char* argv[])
         return 0;
     }
 
+    search_config_t scfg{
+        max_depth,
+        Clock::now() + timeout.value,
+        max_width,
+        randomize,
+        cache
+    };
+
     if (command == "dfs") {
         if (cache_impl == "std") {
 
-            DFS<std_cache> x(max_depth, verbose, timeout.value,
-                             max_width, randomize, cache, print_wins, print_cache_hits);
+            DFS<std_cache> x(scfg, verbose, print_wins, print_cache_hits);
             x.do_search(initial_board);
 
         } else if (cache_impl == "dense") {
 
-            DFS<dense_cache> x(max_depth, verbose, timeout.value,
-                               max_width, randomize, cache, print_wins, print_cache_hits);
+            DFS<dense_cache> x(scfg, verbose, print_wins, print_cache_hits);
             x.do_search(initial_board);
 
         } else if (cache_impl == "judy") {
 
-            DFS<judy_cache> x(max_depth, verbose, timeout.value,
-                              max_width, randomize, cache, print_wins, print_cache_hits);
+            DFS<judy_cache> x(scfg, verbose, print_wins, print_cache_hits);
             x.do_search(initial_board);
 
         } else {
-            std::cerr << "unknown cache implementatin: \"" << cache_impl << "\"" << std::endl;
+            std::cerr << "unknown cache implementation: \"" << cache_impl << "\"" << std::endl;
             std::cerr << visible_opts << std::endl;
         }
 
     } else if (command == "mtdfs") {
 
-        search_config_t scfg{
-            max_depth,
-            Clock::now() + timeout.value,
-            max_width,
-            randomize,
-            cache
-        };
-
         if (cache_impl == "std") {
 
-            MTDFS<std_cache> x(n_threads, scfg);
+            MTDFS<DFS<std_cache, false>> x(n_threads, scfg);
             x.do_search(initial_board);
 
         } else if (cache_impl == "dense") {
 
-            MTDFS<dense_cache> x(n_threads, scfg);
+            MTDFS<DFS<dense_cache, false>> x(n_threads, scfg);
             x.do_search(initial_board);
 
         } else if (cache_impl == "judy") {
 
-            MTDFS<judy_cache> x(n_threads, scfg);
+            MTDFS<DFS<judy_cache, false>> x(n_threads, scfg);
             x.do_search(initial_board);
 
         } else {
