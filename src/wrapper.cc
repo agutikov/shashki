@@ -78,6 +78,9 @@ int generate_moves(boards_t* out, board_t b, int is_white_turn)
     if (!out) {
         return -1;
     }
+    if (out->data) {
+        free_boards(out);
+    }
 
     board_state_t brd = from_c_board(b, !is_white_turn);
 

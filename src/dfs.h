@@ -345,6 +345,9 @@ private:
             if (brd_callback && v.size() > 0) {
                 for (const auto& b : v) {
                     running = brd_callback((depth % 2) ? rotate(b) : b, depth + 1);
+                    if (!running) {
+                        break;
+                    }
                 }
             }
         }

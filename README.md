@@ -220,11 +220,5 @@ TODO: Investigate if SMT-solver can be used to verify compliance of the rules by
 While writing SMT rules is complicated itself, it is significantly more similar to defining rules in natural language,
 and therefore less error-prone.
 
-#### Dreams
-
-* Stage 1 - Write unit-tests that use SMT-solver to verify results (data);
-* Stage 2 - Verify engine code itself;
-* Stage 3 - Synthise the entire engine from the SMT rules;
-* Stage 4 - PROFIT.
 
 
