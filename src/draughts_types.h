@@ -115,7 +115,7 @@ struct brd_item_t
 
     bool is_on_king_row() const
     {
-        return mask & 0xF000000;
+        return mask & (0xF << 28);
     }
 };
 
