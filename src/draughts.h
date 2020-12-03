@@ -55,25 +55,25 @@ inline const brd_index_t format_table[8][8] = {
 
 void print(const board_state_t& s)
 {
-    const char* cols = "     a     b     c     d     e     f     g     h     ";
-    const char* line = "  -------------------------------------------------  ";
+    const char* cols = "    a   b   c   d   e   f   g   h";
+    const char* line = "  +---+---+---+---+---+---+---+---+";
     size_t row = 8;
-    printf("%s\n%s\n", cols, line);
+    printf("%s\n", line);
     for (const auto& f : format_table) {
         printf("%lu |", row);
         for (brd_index_t index : f) {
             if (!index) {
-                printf("     |");
+                printf("   |");
             } else {
                 auto item = brd_item_t(index);
-                const char* c = s.sides[0].kings.exist(item) ? " (O) " :
-                         s.sides[0].items.exist(item) ? "  o  " :
-                         s.sides[1].kings.exist(item) ? " }X{ " :
-                         s.sides[1].items.exist(item) ? "  x  " : "     ";
+                const char* c = s.sides[0].kings.exist(item) ? " @ " :
+                         s.sides[0].items.exist(item) ? " o " :
+                         s.sides[1].kings.exist(item) ? " # " :
+                         s.sides[1].items.exist(item) ? " x " : "   ";
                 printf("%s|", c);
             }
         }
-        printf(" %lu\n%s\n", row, line);
+        printf("\n%s\n", line);
         row--;
     }
     printf("%s\n\n", cols);

@@ -59,7 +59,7 @@ void calc_all()
                 printf(" + ");
             }
 
-            size_t w_vars = hist[occupied-1][whites];
+            size_t w_vars = hist[occupied-1][whites-1];
             printf("%ld * (", w_vars);
 
             int blacks = occupied - whites;

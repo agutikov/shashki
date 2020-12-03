@@ -40,13 +40,13 @@ int main(int argc, const char* argv[])
     std::string header = "DTS - Decision Tree Statistics (Russian Draughts)\n";
     header += "\nUsage: ";
     header += argv[0];
-    header += " dfs | mtdfs [options]\n";
+    header += " dfs|mtdfs [options]\n";
     header += "\nCommands:\n";
     header += "  dfs - Depth-first search\n";
     header += "  mtdfs - Multi-threaded depth-first search\n";
     header += "\nOptions";
 
-    std::string timeout_desc = "timeout, default=10s\nunits = "s + readable_duration_t<Clock>::all_units(" | ") + "\ndefault unit = s";
+    std::string timeout_desc = "timeout, default=10s\nunits = "s + readable_duration_t<Clock>::all_units("|") + "\ndefault unit = s";
 
     po::options_description visible_opts(header);
     visible_opts.add_options()
@@ -55,11 +55,11 @@ int main(int argc, const char* argv[])
         ("verbose,v", po::bool_switch(&verbose), "print all boards")
         ("timeout,t", po::value<decltype(timeout)>(&timeout), timeout_desc.c_str())
         ("randomize,r", po::bool_switch(&randomize), "randomize braches iteration")
-        ("max-width,w", po::value<size_t>(&max_width)->default_value(0), "max branches iterate, 0 - all\nwith randomize=false max-width = 1 | 2 | 3")
+        ("max-width,w", po::value<size_t>(&max_width)->default_value(0), "max branches iterate, 0 - all\nwith randomize=false max-width = 1|2|3")
         ("cache,c", po::bool_switch(&cache), "enable board cache and cache_hit detection")
         ("print-cache-hits,H", po::bool_switch(&print_cache_hits), "print board for cache hit case")
         ("print-wins,W", po::bool_switch(&print_wins), "print entire path for win case")
-        ("cache-impl,C", po::value<std::string>(&cache_impl)->default_value("judy"), "cache implementation: std | dense | judy")
+        ("cache-impl,C", po::value<std::string>(&cache_impl)->default_value("judy"), "cache implementation: std|dense|judy")
         ("threads,j", po::value<size_t>(&n_threads)->default_value(1), "number of threads, for mtdfs")
     ;
 
