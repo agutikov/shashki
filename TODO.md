@@ -1,6 +1,5 @@
 
-   
-1.  Convert _board_states_generator -> function
+
 2.  Unit tests, coverage?
 3.  graphs
 4.  stats
