@@ -120,215 +120,245 @@ board_state_t do_capture(board_state_t state, brd_map_t capture)
 }
 
 
-// move active item between recursive calls (change state) and collect captured enemies
-// when capture sequence completed - remove captured enemies before state saved
-size_t next_item_captures(std::vector<board_state_t>& states, const board_state_t& state, brd_index_t item_pos, brd_map_t captured)
+
+
+
+struct _board_states_generator
 {
-    // Rules:
-    // - enemy items have to be removed after capture chain finished completely
-    // - every enemy item can't be captured twice
-    brd_map_t available_dst = tables.capture_move_masks[item_pos.index] - state.occupied();
-    brd_map_t may_be_captured = state.sides[1].items.select(tables.capture_masks[item_pos.index]);
+    _board_states_generator(std::vector<board_state_t>& buffer) :
+        _states(buffer)
+    {}
 
-    // not allow capture same items multiple times
-    may_be_captured -= captured;
+    _board_states_generator(const _board_states_generator&) = delete;
+    _board_states_generator(_board_states_generator&&) = delete;
+    _board_states_generator& operator=(const _board_states_generator&) = delete;
+    _board_states_generator& operator=(_board_states_generator&&) = delete;
 
-    size_t saved_states = 0;
-    if (may_be_captured && available_dst) {
-        for (auto [capture_item, dst_index] : tables.captures[item_pos.index]) {
-            auto dst = brd_item_t(dst_index);
-            if (!dst) {
-                break;
-            }
-            // branching possible capture moves, follow moves
-            if (may_be_captured.exist(capture_item) && available_dst.exist(dst)) {
-                // do move
-                board_state_t next_state = do_move(state, brd_item_t(item_pos), dst);
+    size_t gen_next_states(const board_state_t& brd)
+    {
+        cur_state = brd;
+        occupied = cur_state.occupied();
 
-                // try continue capturing
-                saved_states += next_item_captures(states, next_state, dst_index, captured + capture_item);
-            }
-        }
+        return gen_states();
     }
 
-    // nothing more can be captured
-    if (saved_states == 0) {
-        // capture sequence completed
-        if (captured) {
-            // do capture
-            board_state_t next_state = do_capture(state, captured);
+private:
 
-            // save new state if it is final
-            states.push_back(next_state);
-            return 1;
-        } else {
-            return 0;
-        }
-    }
+    // move active item between recursive calls (change state) and collect captured enemies
+    // when capture sequence completed - remove captured enemies before state saved
+    size_t next_item_captures(const board_state_t& state, brd_index_t item_pos, brd_map_t captured)
+    {
+        // Rules:
+        // - enemy items have to be removed after capture chain finished completely
+        // - every enemy item can't be captured twice
+        brd_map_t available_dst = tables.capture_move_masks[item_pos.index] - state.occupied();
+        brd_map_t may_be_captured = state.sides[1].items.select(tables.capture_masks[item_pos.index]);
 
-    return saved_states;
-}
+        // not allow capture same items multiple times
+        may_be_captured -= captured;
 
-size_t next_item_moves(std::vector<board_state_t>& states, const board_state_t& state, brd_index_t item_pos)
-{
-    brd_map_t available_dst = tables.fwd_dst_masks[item_pos.index] - state.occupied();
-
-    if (!available_dst) {
-        return 0;
-    }
-
-    size_t saved_states = 0;
-    for (brd_item_t dst : tables.fwd_destinations[item_pos.index]) {
-        if (!dst) {
-            break;
-        }
-        if (available_dst.exist(dst)) {
-            // do move - get new board state
-            board_state_t next_state = do_move(state, brd_item_t(item_pos), dst);
-            // save new state
-            states.push_back(next_state);
-            saved_states++;
-        }
-    }
-    return saved_states;
-}
-
-//TODO: Generalize items and kings tables and next_* functions, parametrize function template with const table
-
-size_t next_king_captures(std::vector<board_state_t>& states, const board_state_t& state, brd_index_t item_pos, brd_map_t captured)
-{
-    brd_map_t cur_occupied = state.occupied();
-    brd_map_t available_dst = tables.king_capture_move_masks[item_pos.index] - cur_occupied;
-    brd_map_t may_be_captured = state.sides[1].items.select(tables.king_capture_masks[item_pos.index]);
-
-    // not allow capture same items multiple times
-    may_be_captured -= captured;
-
-    size_t saved_states = 0;
-    if (may_be_captured && available_dst) {
-        // iter directions
-        for (const auto& dir_captures : tables.king_captures[item_pos.index]) {
-            // iter captures in direction
-            for (const auto& dir_capture : dir_captures) {
-                brd_item_t capture_item = dir_capture.first;
-
-                if (!capture_item) {
+        size_t saved_states = 0;
+        if (may_be_captured && available_dst) {
+            for (auto [capture_item, dst_index] : tables.captures[item_pos.index]) {
+                auto dst = brd_item_t(dst_index);
+                if (!dst) {
                     break;
                 }
-                // cant't jump over allies
-                if (state.sides[0].items.exist(capture_item)) {
-                    break;
-                }
+                // branching possible capture moves, follow moves
+                if (may_be_captured.exist(capture_item) && available_dst.exist(dst)) {
+                    // do move
+                    board_state_t next_state = do_move(state, brd_item_t(item_pos), dst);
 
-                if (may_be_captured.exist(capture_item)) {
-                    // iter over possible jump destinations
-                    for (brd_index_t dst_index : dir_capture.second) {
-                        if (!dst_index) {
-                            break;
-                        }
-                        auto dst = brd_item_t(dst_index);
-
-                        // cant't jump over allies or capture/jump over multiple enemy items
-                        if (cur_occupied.exist(dst)) {
-                            break;
-                        }
-
-                        if (available_dst.exist(dst)) {
-                            // do move
-                            board_state_t next_state = do_move(state, brd_item_t(item_pos), dst);
-
-                            // try continue capturing
-                            saved_states += next_item_captures(states, next_state, dst_index, captured + capture_item);
-                        }
-                    }
+                    // try continue capturing
+                    saved_states += next_item_captures(next_state, dst_index, captured + capture_item);
                 }
             }
         }
+
+        // nothing more can be captured
+        if (saved_states == 0) {
+            // capture sequence completed
+            if (captured) {
+                // do capture
+                board_state_t next_state = do_capture(state, captured);
+
+                // save new state if it is final
+                _states.push_back(next_state);
+                return 1;
+            } else {
+                return 0;
+            }
+        }
+
+        return saved_states;
     }
 
-    // nothing more can be captured
-    if (saved_states == 0) {
-        // capture sequence completed
-        if (captured) {
-            // do capture
-            board_state_t next_state = do_capture(state, captured);
+    size_t next_item_moves(brd_index_t item_pos)
+    {
+        brd_map_t available_dst = tables.fwd_dst_masks[item_pos.index] - occupied;
 
-            // save new state if it is final
-            states.push_back(next_state);
-            return 1;
-        } else {
+        if (!available_dst) {
             return 0;
         }
-    }
 
-    return saved_states;
-}
-
-size_t next_king_moves(std::vector<board_state_t>& states, const board_state_t& state, brd_index_t item_pos)
-{
-    brd_map_t available_dst = tables.king_move_masks[item_pos.index] - state.occupied();
-
-    if (!available_dst) {
-        return 0;
-    }
-
-    size_t saved_states = 0;
-    for (const auto& move_dir : tables.king_moves[item_pos.index]) {
-        for (brd_item_t dst : move_dir) {
+        size_t saved_states = 0;
+        for (brd_item_t dst : tables.fwd_destinations[item_pos.index]) {
             if (!dst) {
                 break;
             }
             if (available_dst.exist(dst)) {
                 // do move - get new board state
-                board_state_t next_state = do_move(state, brd_item_t(item_pos), dst);
+                board_state_t next_state = do_move(cur_state, brd_item_t(item_pos), dst);
                 // save new state
-                states.push_back(next_state);
+                _states.push_back(next_state);
                 saved_states++;
-            } else {
-                // capture handled in next_king_captures()
-                // can't jump while move without capture
-                break;
             }
         }
-    }
-    return saved_states;
-}
-
-size_t gen_states(std::vector<board_state_t>& states, const board_state_t& state)
-{
-    size_t saved_states = 0;
-    const board_side_t& player = state.sides[0];
-
-    for (brd_index_t item_pos = 0; item_pos; ++item_pos) {
-
-        auto item = brd_item_t(item_pos);
-
-        if (player.kings.exist(item)) {
-            saved_states += next_king_captures(states, state, item_pos, {});
-        } else if (player.items.exist(item)) {
-            saved_states += next_item_captures(states, state, item_pos, {});
-        }
-    }
-
-    // As capture is mandatory and can't be skipped
-    // So first - try capture, and if no available captures - then try move
-    if (saved_states) {
         return saved_states;
     }
 
-    for (brd_index_t item_pos = 0; item_pos; ++item_pos) {
+    //TODO: Generalize items and kings tables and next_* functions, parametrize function template with const table
 
-        auto item = brd_item_t(item_pos);
+    size_t next_king_captures(const board_state_t& state, brd_index_t item_pos, brd_map_t captured)
+    {
+        brd_map_t cur_occupied = state.occupied();
+        brd_map_t available_dst = tables.king_capture_move_masks[item_pos.index] - cur_occupied;
+        brd_map_t may_be_captured = state.sides[1].items.select(tables.king_capture_masks[item_pos.index]);
 
-        if (player.kings.exist(item)) {
-            saved_states += next_king_moves(states, state, item_pos);
-        } else if (player.items.exist(item)) {
-            saved_states += next_item_moves(states, state, item_pos);
+        // not allow capture same items multiple times
+        may_be_captured -= captured;
+
+        size_t saved_states = 0;
+        if (may_be_captured && available_dst) {
+            // iter directions
+            for (const auto& dir_captures : tables.king_captures[item_pos.index]) {
+                // iter captures in direction
+                for (const auto& dir_capture : dir_captures) {
+                    brd_item_t capture_item = dir_capture.first;
+
+                    if (!capture_item) {
+                        break;
+                    }
+                    // cant't jump over allies
+                    if (state.sides[0].items.exist(capture_item)) {
+                        break;
+                    }
+
+                    if (may_be_captured.exist(capture_item)) {
+                        // iter over possible jump destinations
+                        for (brd_index_t dst_index : dir_capture.second) {
+                            if (!dst_index) {
+                                break;
+                            }
+                            auto dst = brd_item_t(dst_index);
+
+                            // cant't jump over allies or capture/jump over multiple enemy items
+                            if (cur_occupied.exist(dst)) {
+                                break;
+                            }
+
+                            if (available_dst.exist(dst)) {
+                                // do move
+                                board_state_t next_state = do_move(state, brd_item_t(item_pos), dst);
+
+                                // try continue capturing
+                                saved_states += next_item_captures(next_state, dst_index, captured + capture_item);
+                            }
+                        }
+                    }
+                }
+            }
         }
+
+        // nothing more can be captured
+        if (saved_states == 0) {
+            // capture sequence completed
+            if (captured) {
+                // do capture
+                board_state_t next_state = do_capture(state, captured);
+
+                // save new state if it is final
+                _states.push_back(next_state);
+                return 1;
+            } else {
+                return 0;
+            }
+        }
+
+        return saved_states;
     }
 
-    return saved_states;
-}
+    size_t next_king_moves(brd_index_t item_pos)
+    {
+        brd_map_t available_dst = tables.king_move_masks[item_pos.index] - occupied;
+
+        if (!available_dst) {
+            return 0;
+        }
+
+        size_t saved_states = 0;
+        for (const auto& move_dir : tables.king_moves[item_pos.index]) {
+            for (brd_item_t dst : move_dir) {
+                if (!dst) {
+                    break;
+                }
+                if (available_dst.exist(dst)) {
+                    // do move - get new board state
+                    board_state_t next_state = do_move(cur_state, brd_item_t(item_pos), dst);
+                    // save new state
+                    _states.push_back(next_state);
+                    saved_states++;
+                } else {
+                    // capture handled in next_king_captures()
+                    // can't jump while move without capture
+                    break;
+                }
+            }
+        }
+        return saved_states;
+    }
+
+    size_t gen_states()
+    {
+        size_t saved_states = 0;
+        const board_side_t& player = cur_state.sides[0];
+
+        for (brd_index_t item_pos = 0; item_pos; ++item_pos) {
+
+            auto item = brd_item_t(item_pos);
+
+            if (player.kings.exist(item)) {
+                saved_states += next_king_captures(cur_state, item_pos, {});
+            } else if (player.items.exist(item)) {
+                saved_states += next_item_captures(cur_state, item_pos, {});
+            }
+        }
+
+        // As capture is mandatory and can't be skipped
+        // So first - try capture, and if no available captures - then try move
+        if (saved_states) {
+            return saved_states;
+        }
+
+        for (brd_index_t item_pos = 0; item_pos; ++item_pos) {
+
+            auto item = brd_item_t(item_pos);
+
+            if (player.kings.exist(item)) {
+                saved_states += next_king_moves(item_pos);
+            } else if (player.items.exist(item)) {
+                saved_states += next_item_moves(item_pos);
+            }
+        }
+
+        return saved_states;
+    }
+
+    brd_map_t occupied;
+    board_state_t cur_state;
+
+    std::vector<board_state_t>& _states;
+};
 
 
 // empirical 
@@ -337,15 +367,18 @@ size_t gen_states(std::vector<board_state_t>& states, const board_state_t& state
 struct board_states_generator
 {
     board_states_generator() :
-        states(MAX_LEVEL_WIDTH)
+        states(MAX_LEVEL_WIDTH),
+        g(states)
     {}
     
     board_states_generator(board_states_generator&& other) :
-        states(std::move(other.states))
+        states(std::move(other.states)),
+        g(states)
     {}
 
     board_states_generator(const board_states_generator& other) :
-        states(other.states)
+        states(other.states),
+        g(states)
     {}
 
     board_states_generator& operator=(board_states_generator&&) = delete;
@@ -354,9 +387,12 @@ struct board_states_generator
     const std::vector<board_state_t>& gen_next_states(const board_state_t& brd)
     {
         states.clear();
-        gen_states(states, brd);
+        g.gen_next_states(brd);
         return states;
     }
 
     std::vector<board_state_t> states;
+
+private:
+    _board_states_generator g;
 };

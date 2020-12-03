@@ -8,11 +8,12 @@
 std::vector<board_state_t> do_bfs_level(const std::vector<board_state_t>& boards, size_t depth, stats& sts)
 {
     std::vector<board_state_t> next_boards; 
+    _board_states_generator g(next_boards);
 
     next_boards.reserve(boards.size() * 8); // 8 - empirical multiplier
 
     for (const auto& brd : boards) {
-        size_t w = gen_states(next_boards, brd);
+        size_t w = g.gen_next_states(brd);
         sts.consume_level_width(w, depth);
     }
 
