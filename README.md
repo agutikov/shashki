@@ -19,7 +19,6 @@
       3. The callable that generates the possible moves for a piece should take the following arguments:
          - Initial board status.
          - The initial piece position
-         - The type of piece
          - A callable that can determine if a move is valid.
    3. Write an example that generates the decision tree for the following configuration:
       - Maximum tree depth is 100 moves.

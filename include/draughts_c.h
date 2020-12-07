@@ -30,69 +30,106 @@ board_t get_initial_board();
 
 
 /**
- * Structure contains multiple boards.
- * 
- * Produced by generate_moves().
- * Freed by free_boards().
- */
-typedef struct
-{
-    size_t size;
-    board_t* data;
-} boards_t;
-
-
-/**
- * Free memory allocated by boards in boards_t.
- * 
- * If boards == 0 or boards does not holding memory - do nothing.
- */
-void free_boards(boards_t* boards);
-
-/**
- * Function generates set of possible subsequent boards.
- * Function allocates memory for resulting data.
- * 
- * @param out boards buffer for result
- * @param b initial board state
- * @param is_white_turn
- * 
- * @return >=0 number of generated boards if success, <0 if error
- */
-int generate_moves(boards_t* out, board_t b, int is_white_turn);
-
-
-/**
- * Callback type for walking board state tree.
- * @see walk_all_moves()
- */
-typedef int (*board_callback_t)(board_t b, size_t depth);
-
-/**
  * @brief Prints board state,
  * 
  * @param b board state
- * @param depth current depth
- * @return int always returns 1
  */
-int print_board(board_t b, size_t depth);
+void print_board(board_t b);
 
 
 /**
- * @brief Perform DFS walkthrough of possible board states
- *        starting from given initial state
- *        up to provided depth.
+ * @struct board_tree_node_t
+ * @brief Decision tree node.
  * 
- * If callback provided than it will be called for each generated board state.
- * If callbeck returns 0 - walkthough stops.
- * 
- * @param b initial board state
- * @param is_white_turn flag indicating next move is done by white party
- * @param c optional callback
- * @param max_depth 
- * @return int 0 if walkthough completed, 1 if teminated.
+ * next_states_status contains the size of next_states array
+ * or indicates the reason why there are no next_states
+ * next_states_status == 0  - no moves available, one side win
+ * next_states_status > 0   - size of next_states array
+ * next_states_status == -1 - depth limit
+ * next_states_status == -2 - loop detected same board state already occured in previous board states 
+ * next_states_status == -3 - calculation stopped due to error
  */
-int walk_all_moves(board_t b, int is_white_turn, board_callback_t c, unsigned int max_depth);
+typedef struct board_tree_node
+{
+    board_t state;
+
+    int next_states_status;
+    struct board_tree_node* next_states;
+} board_tree_node_t;
+
+
+/**
+ * @brief Prints board tree,
+ * 
+ * @param t board tree
+ */
+void print_tree(board_tree_node_t* t);
+
+/**
+ * Free memory allocated by board state tree.
+ * 
+ * If tree == 0 or next_states does not holding memory - do nothing.
+ */
+void free_board_tree(board_tree_node_t* tree);
+
+
+
+/**
+ * @brief The function that can determine if a move is valid.
+ * 
+ * @param initial_state Initial board status.
+ * @param from The initial position of the piece to be moved. Must be in range [0, 31].
+ * @param to The final position of the piece to be moved. Must be in range [0, 31].
+ * 
+ * @return 1 - if from and to define correct possible move, 0 - otherwise
+ */
+int verify_move(board_t initial_state, unsigned int from, unsigned int to);
+
+
+/**
+ * @brief The function that generates the possible moves for a piece.
+ * 
+ * @param initial_state Initial board status.
+ * @param item The initial piece position.
+ * @param verify_move_callback A callable that can determine if a move is valid.
+ * 
+ * @return Resulting decision tree with max depth=1. 
+ */
+board_tree_node_t
+generate_item_moves(
+    board_t initial_state,
+    unsigned int item,
+    int (*verify_move_callback)(board_t, unsigned int, unsigned int)
+);
+
+
+/**
+ * @brief The function that generates all the possible moves that can be played up to a specified number of moves
+ * 
+ * Function performs Depth-first search and collects results into output tree.
+ * 
+ * @param initial_state Initial board status.
+ * @param white_move The player that makes the first move. 0 - black, !0 - white.
+ * @param verify_move_callback A callable that generates the possible moves for a piece.
+ * @param generate_item_moves_callback A callable that can determine if a move is valid.
+ * @param max_depth The desired maximum depth of moves.
+ * 
+ * @return Resulting decision tree.
+ */
+board_tree_node_t
+generate_all_moves(
+    board_t initial_state,
+    int white_move,
+    int (*verify_move_callback)(board_t, unsigned int, unsigned int),
+    board_tree_node_t (*generate_item_moves_callback)(
+        board_t,
+        unsigned int,
+        int (*)(board_t, unsigned int, unsigned int)
+    ),
+    size_t max_depth
+);
+
+
 
 
 
