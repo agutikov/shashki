@@ -185,6 +185,11 @@ struct brd_map_t
     {
         return mask & items.mask;
     }
+
+    friend bool operator==(const brd_map_t& lhs, const brd_map_t& rhs)
+    {
+        return lhs.mask == rhs.mask;
+    }
 };
 
 // https://stackoverflow.com/questions/746171/efficient-algorithm-for-bit-reversal-from-msb-lsb-to-lsb-msb-in-c

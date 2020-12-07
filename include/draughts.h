@@ -19,6 +19,11 @@ struct board_side_t
     {
         return uint64_t(kings.mask) << 32 | items.mask;
     }
+
+    friend bool operator==(const board_side_t& lhs, const board_side_t& rhs)
+    {
+        return lhs.kings == rhs.kings && lhs.items == rhs.items;
+    }
 };
 
 struct board_state_t
@@ -37,6 +42,11 @@ struct board_state_t
     brd_map_t occupied() const
     {
         return sides[0].items + sides[1].items;
+    }
+
+    friend bool operator==(const board_state_t& lhs, const board_state_t& rhs)
+    {
+        return lhs.sides[0] == rhs.sides[0] && lhs.sides[1] == rhs.sides[1];
     }
 };
 

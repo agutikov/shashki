@@ -1,3 +1,4 @@
 .vscode
 callgrind*
 build
+builddir
