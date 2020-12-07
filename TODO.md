@@ -16,8 +16,7 @@
 13. TODOs
 14. Cache as state->subseq_states mapping
 15. Global sharded Cache
-16. SMT, CSP solvers, CLP and unit tests
-17. Optimization and generalization
+16. Optimization and generalization
 
 
 

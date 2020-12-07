@@ -213,15 +213,22 @@ But it seems that this requirement will be met if each item will be processed se
 and will not have theoretical possibility to iterfer with each other during conversion.
 
 
-### SMT
-
-TODO: Investigate if SMT-solver can be used to verify compliance of the rules by the implemented engine.
-
-While writing SMT rules is complicated itself, it is significantly more similar to defining rules in natural language,
-and therefore less error-prone.
-
 
 ### Drawbacks of testing one engine agains another
 
+Testing 1-d engine implementation against 2-d:
+- Pros
+  - less code
+  - more cases can be tested
+- Cons
+  - some errors may be not detectable due to same implementation design can cause same errors as in engine under test
+  - code does not describe cases
 
+Testing engine implementation against static data representing cases:
+- Pros
+  - code explicitly describes the cases, they can be visually represented in code
+- Cons
+  - significantly more code
+  - code is monotonous -> so copy-pasted -> so error-prone
+    - consistency checks can be added for test-case data itself
 
