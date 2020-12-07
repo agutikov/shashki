@@ -5,6 +5,10 @@
 
 #include "draughts.h"
 
+extern "C" {
+#include "draughts_c.h"
+}
+
 
 enum board_cell_state_enum : char
 {
@@ -15,6 +19,7 @@ enum board_cell_state_enum : char
     M = 'M'
 };
 
+inline board_cell_state_enum available_items[4] = {o, G, x, M};
 
 bool is_valid(board_cell_state_enum state)
 {
@@ -56,17 +61,17 @@ inline const board_state_2d_t valid_positions = {
 
 bool is_valid_pos(size_t row, size_t col)
 {
-    return row < 8 && col < 8 && valid_positions[row][col];
+    return row < 8 && col < 8 && (valid_positions[row][col] != _);
 }
 
 bool is_white_king_row(size_t row)
 {
-    return row == 7;
+    return row == 0;
 }
 
 bool is_black_king_row(size_t row)
 {
-    return row == 0;
+    return row == 7;
 }
 
 struct board_2d_t

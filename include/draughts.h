@@ -5,9 +5,11 @@
 #include <utility>
 #include <vector>
 #include <algorithm>
+#include <string>
 
 #include "draughts_tables.h"
 
+using namespace std::string_literals;
 
 
 struct board_side_t
@@ -23,6 +25,17 @@ struct board_side_t
     friend bool operator==(const board_side_t& lhs, const board_side_t& rhs)
     {
         return lhs.kings == rhs.kings && lhs.items == rhs.items;
+    }
+
+    void bit_add(const board_side_t& b)
+    {
+        kings += b.kings;
+        items += b.items;
+    }
+
+    bool contains(const board_side_t& b)
+    {
+        return kings.exist_all(b.kings) && items.exist_all(b.items);
     }
 };
 
@@ -47,6 +60,17 @@ struct board_state_t
     friend bool operator==(const board_state_t& lhs, const board_state_t& rhs)
     {
         return lhs.sides[0] == rhs.sides[0] && lhs.sides[1] == rhs.sides[1];
+    }
+
+    void bit_add(const board_state_t& b)
+    {
+        sides[0].bit_add(b.sides[0]);
+        sides[1].bit_add(b.sides[1]);
+    }
+
+    bool contains(const board_state_t& b)
+    {
+        return sides[0].contains(b.sides[0]) && sides[1].contains(b.sides[1]);
     }
 };
 
@@ -89,6 +113,33 @@ void print(const board_state_t& s)
     printf("%s\n\n", cols);
 }
 
+
+std::ostream& operator<< (std::ostream& out, const board_state_t& brd)
+{
+    auto cols = "    a   b   c   d   e   f   g   h"s;
+    auto line = "  +---+---+---+---+---+---+---+---+"s;
+    size_t row = 8;
+    out << line << "\n"s;
+    for (const auto& f : format_table) {
+        out << std::to_string(row) << " |"s;
+        for (brd_index_t index : f) {
+            if (!index) {
+                out << "   |"s;
+            } else {
+                auto item = brd_item_t(index);
+                auto c = brd.sides[0].kings.exist(item) ? " @ "s :
+                         brd.sides[0].items.exist(item) ? " o "s :
+                         brd.sides[1].kings.exist(item) ? " # "s :
+                         brd.sides[1].items.exist(item) ? " x "s : "   "s;
+                out << c << "|"s;
+            }
+        }
+        out << "\n"s << line << "\n"s;
+        row--;
+    }
+    out << cols << "\n\n"s;
+    return out;
+}
 
 board_side_t reverse(const board_side_t& b)
 {
@@ -144,15 +195,75 @@ struct _board_states_generator
     _board_states_generator& operator=(const _board_states_generator&) = delete;
     _board_states_generator& operator=(_board_states_generator&&) = delete;
 
-    size_t gen_next_states(const board_state_t& brd)
+    size_t gen_item_captures(brd_index_t item_pos)
+    {
+        const board_side_t& player = cur_state.sides[0];
+        auto item = brd_item_t(item_pos);
+
+        if (player.kings.exist(item)) {
+            next_king_captures(cur_state, item_pos, {});
+        } else if (player.items.exist(item)) {
+            next_item_captures(cur_state, item_pos, {});
+        }
+
+        return generated;
+    }
+
+    size_t gen_captures()
+    {
+        for (brd_index_t pos = 0; pos; ++pos) {
+            gen_item_captures(pos);
+        }
+
+        return generated;
+    }
+
+    size_t gen_item_moves(brd_index_t item_pos)
+    {
+        auto item = brd_item_t(item_pos);
+
+        const board_side_t& player = cur_state.sides[0];
+        if (player.kings.exist(item)) {
+            next_king_moves(item_pos);
+        } else if (player.items.exist(item)) {
+            next_item_moves(item_pos);
+        }
+
+        return generated;
+    }
+
+    size_t gen_moves()
+    {
+        for (brd_index_t item_pos = 0; item_pos; ++item_pos) {
+            gen_item_moves(item_pos);
+        }
+
+        return generated;
+    }
+
+    void prepare(const board_state_t& brd)
     {
         cur_state = brd;
         occupied = cur_state.occupied();
-
-        return gen_states();
+        bit_filter = board_state_t{board_side_t{0, 0}, board_side_t{0, 0}};
+        generated = 0;
     }
 
-private:
+    size_t gen_next_states(const board_state_t& brd)
+    {
+        //TOOD: Refactor, 30 Mboards/s
+
+        prepare(brd);
+
+        // As capture is mandatory and can't be skipped
+        // So first - try capture, and if no available captures - then try move
+        if (gen_captures()) {
+            return generated;
+        }
+
+        return gen_moves();
+    }
+
 
     // move active item between recursive calls (change state) and collect captured enemies
     // when capture sequence completed - remove captured enemies before state saved
@@ -192,8 +303,22 @@ private:
                 // do capture
                 board_state_t next_state = do_capture(state, captured);
 
-                // save new state if it is final
-                _states.push_back(next_state);
+                bool duplicate = false;
+                if (bit_filter.contains(next_state)) {
+                    for (const auto& b : _states) {
+                        if (b == next_state) {
+                            duplicate = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!duplicate) {
+                    // save new state if it is final
+                    _states.push_back(next_state);
+                    bit_filter.bit_add(next_state);
+                    generated++;
+                }
                 return 1;
             } else {
                 return 0;
@@ -203,15 +328,14 @@ private:
         return saved_states;
     }
 
-    size_t next_item_moves(brd_index_t item_pos)
+    void next_item_moves(brd_index_t item_pos)
     {
         brd_map_t available_dst = tables.fwd_dst_masks[item_pos.index] - occupied;
 
         if (!available_dst) {
-            return 0;
+            return;
         }
 
-        size_t saved_states = 0;
         for (brd_item_t dst : tables.fwd_destinations[item_pos.index]) {
             if (!dst) {
                 break;
@@ -221,10 +345,9 @@ private:
                 board_state_t next_state = do_move(cur_state, brd_item_t(item_pos), dst);
                 // save new state
                 _states.push_back(next_state);
-                saved_states++;
+                generated++;
             }
         }
-        return saved_states;
     }
 
     //TODO: Generalize items and kings tables and next_* functions, parametrize function template with const table
@@ -275,6 +398,9 @@ private:
                                 saved_states += next_item_captures(next_state, dst_index, captured + capture_item);
                             }
                         }
+
+                        // cant't jump over enemies without capture
+                        break;
                     }
                 }
             }
@@ -287,8 +413,23 @@ private:
                 // do capture
                 board_state_t next_state = do_capture(state, captured);
 
-                // save new state if it is final
-                _states.push_back(next_state);
+                bool duplicate = false;
+                if (bit_filter.contains(next_state)) {
+                    for (const auto& b : _states) {
+                        if (b == next_state) {
+                            duplicate = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!duplicate) {
+                    // save new state if it is final
+                    _states.push_back(next_state);
+                    bit_filter.bit_add(next_state);
+                    generated++;
+                }
+
                 return 1;
             } else {
                 return 0;
@@ -298,15 +439,14 @@ private:
         return saved_states;
     }
 
-    size_t next_king_moves(brd_index_t item_pos)
+    void next_king_moves(brd_index_t item_pos)
     {
         brd_map_t available_dst = tables.king_move_masks[item_pos.index] - occupied;
 
         if (!available_dst) {
-            return 0;
+            return;
         }
 
-        size_t saved_states = 0;
         for (const auto& move_dir : tables.king_moves[item_pos.index]) {
             for (brd_item_t dst : move_dir) {
                 if (!dst) {
@@ -317,7 +457,7 @@ private:
                     board_state_t next_state = do_move(cur_state, brd_item_t(item_pos), dst);
                     // save new state
                     _states.push_back(next_state);
-                    saved_states++;
+                    generated++;
                 } else {
                     // capture handled in next_king_captures()
                     // can't jump while move without capture
@@ -325,49 +465,15 @@ private:
                 }
             }
         }
-        return saved_states;
     }
 
-    size_t gen_states()
-    {
-        size_t saved_states = 0;
-        const board_side_t& player = cur_state.sides[0];
-
-        for (brd_index_t item_pos = 0; item_pos; ++item_pos) {
-
-            auto item = brd_item_t(item_pos);
-
-            if (player.kings.exist(item)) {
-                saved_states += next_king_captures(cur_state, item_pos, {});
-            } else if (player.items.exist(item)) {
-                saved_states += next_item_captures(cur_state, item_pos, {});
-            }
-        }
-
-        // As capture is mandatory and can't be skipped
-        // So first - try capture, and if no available captures - then try move
-        if (saved_states) {
-            return saved_states;
-        }
-
-        for (brd_index_t item_pos = 0; item_pos; ++item_pos) {
-
-            auto item = brd_item_t(item_pos);
-
-            if (player.kings.exist(item)) {
-                saved_states += next_king_moves(item_pos);
-            } else if (player.items.exist(item)) {
-                saved_states += next_item_moves(item_pos);
-            }
-        }
-
-        return saved_states;
-    }
 
     brd_map_t occupied;
     board_state_t cur_state;
 
     std::vector<board_state_t>& _states;
+    size_t generated;
+    board_state_t bit_filter;
 };
 
 
@@ -401,8 +507,25 @@ struct board_states_generator
         return states;
     }
 
-    std::vector<board_state_t> states;
+    const std::vector<board_state_t>& gen_item_next_states(const board_state_t& brd, brd_index_t item_pos)
+    {
+        states.clear();
+
+        g.prepare(brd);
+
+        if (g.gen_captures()) {
+            states.clear();
+            g.prepare(brd);
+            g.gen_item_captures(item_pos);
+        } else {
+            g.gen_item_moves(item_pos);
+        }
+
+        return states;
+    }
 
 private:
+    std::vector<board_state_t> states;
+
     _board_states_generator g;
 };

@@ -181,6 +181,11 @@ struct brd_map_t
         return (mask & map.mask) != 0;
     }
 
+    bool exist_all(const brd_map_t& map) const
+    {
+        return (mask & map.mask) == map.mask;
+    }
+
     brd_map_t select(const brd_map_t& items) const
     {
         return mask & items.mask;
