@@ -110,7 +110,7 @@ void print(const board_state_t& s)
         printf("\n%s\n", line);
         row--;
     }
-    printf("%s\n\n", cols);
+    printf("%s\n", cols);
 }
 
 

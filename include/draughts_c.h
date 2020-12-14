@@ -46,7 +46,7 @@ void print_board(board_t b);
  * next_states_status == 0  - no moves available, one side win
  * next_states_status > 0   - size of next_states array
  * next_states_status == -1 - depth limit
- * next_states_status == -2 - loop detected same board state already occured in previous board states 
+ * next_states_status == -2 - loop detected, next_states points to single node among parent nodes, containing same board state
  * next_states_status == -3 - calculation stopped due to error
  */
 typedef struct board_tree_node
@@ -63,7 +63,7 @@ typedef struct board_tree_node
  * 
  * @param t board tree
  */
-void print_tree(board_tree_node_t* t);
+void print_tree(const board_tree_node_t* t);
 
 /**
  * Free memory allocated by board state tree.
