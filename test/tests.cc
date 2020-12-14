@@ -7,13 +7,11 @@
 
 #include <boost/functional/hash.hpp>
 
-#include "draughts_2d.h"
 #include "cases.h"
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest/doctest.h"
-
-
+#include "draughts_2d.h"
 
 
 // validate 2d board state
@@ -68,7 +66,6 @@ void is_valid(const board_2d_t& brd)
 }
 
 
-
 TEST_CASE("valid_board")
 {
     board_2d_t boards[] = {
@@ -95,38 +92,6 @@ void test_conversion(const board_2d_t& b2)
     auto b22 = from_1d_brd(b1);
     is_valid(b22);
     REQUIRE(b2 == b22);
-}
-
-board_2d_t add_item(board_2d_t b, board_cell_state_enum v, size_t row, size_t col)
-{
-    board_2d_t r = b;
-
-    if (is_occupied(r.state[row][col])) {
-        return r;
-    }
-
-    if (is_white(v) && is_white_king_row(row)) {
-        v = board_cell_state_enum::G;
-    }
-    if (is_black(v) && is_black_king_row(row)) {
-        v = board_cell_state_enum::M;
-    }
-
-    r.state[row][col] = v;
-
-    if (is_white(v)) {
-        r.w_items++;
-        if (is_king(v)) {
-            r.w_kings++;
-        }   
-    } else if (is_black(v)) {
-        r.b_items++;
-        if (is_king(v)) {
-            r.b_kings++;
-        }
-    }
-
-    return r;
 }
 
 TEST_CASE("2d_1d_conversion")
@@ -205,17 +170,6 @@ TEST_CASE("rotation")
     }
 
     test_rotation(initial_board_2d);
-}
-
-template <typename T>
-std::ostream& operator<< (std::ostream& out, const std::vector<T>& v)
-{
-    if (!v.empty()) {
-        std::for_each(v.begin(), v.end(), [&out] (const T& item) {
-            out << item << "\n";
-        });
-    }
-    return out;
 }
 
 

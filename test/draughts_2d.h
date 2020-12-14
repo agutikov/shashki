@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <iostream>
+#include <iomanip>
 
 #include "draughts.h"
 
@@ -191,6 +192,40 @@ board_2d_t from_1d_brd(const board_state_t& b)
     return r;
 }
 
+board_2d_t from_1d_brd(const board_t& b)
+{
+    board_2d_t r = empty_board_2d;
+
+    for(int i = 0; i < 32; i++) {
+        uint32_t item = 1 << i;
+        brd_2d_vector_t v{brd_index_t{i}};
+        int row = 7 - v.y;
+        int col = v.x;
+
+        if (b.w_items & item) {
+            r.w_items++;
+            if (b.w_kings & item) {
+                r.w_kings++;
+                r.state[row][col] = board_cell_state_enum::G;
+            } else {
+                r.state[row][col] = board_cell_state_enum::o;
+            }
+        }
+
+        if (b.b_items & item) {
+            r.b_items++;
+            if (b.b_kings & item) {
+                r.b_kings++;
+                r.state[row][col] = board_cell_state_enum::M;
+            } else {
+                r.state[row][col] = board_cell_state_enum::x;
+            }
+        }
+    }
+
+    return r;
+}
+
 board_state_t to_1d_brd(const board_2d_t& b)
 {
     board_state_t r;
@@ -218,3 +253,85 @@ board_state_t to_1d_brd(const board_2d_t& b)
     return r;
 }
 
+board_t to_1d_c_brd(const board_2d_t& b)
+{
+    board_t r{0, 0, 0, 0};
+
+    for (int row = 0; row < 8; row++) {
+        for (int col = 0; col < 8; col++) {
+            brd_item_t item{brd_2d_vector_t{col, 7 - row}};
+            if (is_white(b.state[row][col]))
+            {
+                r.w_items |= item.mask;
+                if (is_king(b.state[row][col])) {
+                    r.w_kings |= item.mask;
+                }
+            }
+            if (is_black(b.state[row][col]))
+            {
+                r.b_items |= item.mask;
+                if (is_king(b.state[row][col])) {
+                    r.b_kings |= item.mask;
+                }
+            }
+        }
+    }
+
+    return r;
+}
+
+
+board_2d_t add_item(board_2d_t b, board_cell_state_enum v, size_t row, size_t col)
+{
+    board_2d_t r = b;
+
+    if (is_occupied(r.state[row][col])) {
+        return r;
+    }
+
+    if (is_white(v) && is_white_king_row(row)) {
+        v = board_cell_state_enum::G;
+    }
+    if (is_black(v) && is_black_king_row(row)) {
+        v = board_cell_state_enum::M;
+    }
+
+    r.state[row][col] = v;
+
+    if (is_white(v)) {
+        r.w_items++;
+        if (is_king(v)) {
+            r.w_kings++;
+        }   
+    } else if (is_black(v)) {
+        r.b_items++;
+        if (is_king(v)) {
+            r.b_kings++;
+        }
+    }
+
+    return r;
+}
+
+
+template <typename T>
+std::ostream& operator<< (std::ostream& out, const std::vector<T>& v)
+{
+    if (!v.empty()) {
+        std::for_each(v.begin(), v.end(), [&out] (const T& item) {
+            out << item << "\n";
+        });
+    }
+    return out;
+}
+
+std::ostream& operator<< (std::ostream& out, const board_t& b)
+{
+    out << std::setfill('0') << std::setw(8) << std::right << std::hex;
+    out << "board_t{w_kings=0x" << b.w_kings << ", ";
+    out << "w_items=0x" << b.w_items << ", ";
+    out << "b_kings=0x" << b.b_kings << ", ";
+    out << "b_items=0x" << b.b_items << "}";
+    out << std::setfill(' ') << std::setw(0) << std::right << std::dec;
+    return out;
+}

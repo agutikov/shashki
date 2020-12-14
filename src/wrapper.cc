@@ -68,10 +68,10 @@ static void _print_tree(const board_tree_node_t* t, size_t depth)
     depth++;
 
     switch(t->next_states_status) {
-        case -3:
+        case BOARD_TREE_STATUS_ERROR:
             printf("Move %lu: ERROR\n", depth);
             return;
-        case -2:
+        case BOARD_TREE_STATUS_LOOP:
             printf("Move %lu: Loop\n", depth);
             t = t->next_states;
             for (int i = 0; i < t->next_states_status; i++) {
@@ -79,7 +79,7 @@ static void _print_tree(const board_tree_node_t* t, size_t depth)
                 print_board(t->next_states[i].state);
             }
             return;
-        case -1:
+        case BOARD_TREE_STATUS_DEPTH:
             //printf("Move %lu: Depth limit\n", depth);
             return;
         case 0:
@@ -118,7 +118,7 @@ static board_tree_node_t new_board_tree_node(const board_t& b, int state_size)
     r.next_states = (board_tree_node_t*) calloc(state_size, sizeof(board_tree_node_t));
 
     if (r.next_states == 0) {
-        r.next_states_status = -3;
+        r.next_states_status = BOARD_TREE_STATUS_ERROR;
     }
 
     return r;
@@ -241,18 +241,18 @@ static unsigned int leftmost_bit(uint32_t mask)
 static board_tree_node_t
 _generate_item_moves(
     board_t initial_state,
-    unsigned int item,
+    unsigned int item_index,
     int (*verify_move_callback)(board_t, unsigned int, unsigned int)
 ) noexcept
 {
-    board_tree_node_t r{initial_state, -3, 0};
+    board_tree_node_t r{initial_state, BOARD_TREE_STATUS_ERROR, 0};
 
-    if (item >= 32) {
+    if (item_index >= 32) {
         return r;
     }
 
     int white_move;
-    uint32_t from_mask = 1 << item;
+    uint32_t from_mask = 1 << item_index;
     if (from_mask & initial_state.w_items) {
         white_move = 1;
     } else if (from_mask & initial_state.b_items) {
@@ -264,7 +264,7 @@ _generate_item_moves(
     try {
         board_states_generator g;
 
-        const auto& v = g.gen_item_next_states(from_c_board(initial_state, !white_move), from_c_index(item, !white_move));
+        const auto& v = g.gen_item_next_states(from_c_board(initial_state, !white_move), from_c_index(item_index, !white_move));
 
         if (v.size() == 0) {
             r.next_states_status = 0;
@@ -285,12 +285,12 @@ _generate_item_moves(
                 to_mask = from_mask;
             }
             unsigned int to_index = leftmost_bit(to_mask);
-            if (to_index >= 32 || !verify_move_callback(initial_state, item, to_index)) {
+            if (to_index >= 32 || !verify_move_callback(initial_state, item_index, to_index)) {
                 continue;
             }
 
             r.next_states[r.next_states_status].state = b;
-            r.next_states[r.next_states_status].next_states_status = -1;
+            r.next_states[r.next_states_status].next_states_status = BOARD_TREE_STATUS_DEPTH;
             r.next_states[r.next_states_status].next_states = 0;
             r.next_states_status++;
         }
@@ -299,7 +299,7 @@ _generate_item_moves(
     } catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
 
-        return {initial_state, -3, 0};
+        return {initial_state, BOARD_TREE_STATUS_ERROR, 0};
     }
 }
 
@@ -307,11 +307,11 @@ _generate_item_moves(
 board_tree_node_t
 generate_item_moves(
     board_t initial_state,
-    unsigned int item,
+    unsigned int item_index,
     int (*verify_move_callback)(board_t, unsigned int, unsigned int)
 )
 {
-    return _generate_item_moves(initial_state, item, verify_move_callback);
+    return _generate_item_moves(initial_state, item_index, verify_move_callback);
 }
 
 
@@ -331,17 +331,19 @@ _generate_all_moves_lvl(
 
     r.first = initial_state;
 
-    for (unsigned int i = 0; i < 32; i++) {
-        bool white_exist = initial_state.w_items & (1 << i);
-        bool black_exist = initial_state.b_items & (1 << i);
+    for (unsigned int index = 0; index < 32; index++) {
+        bool white_exist = initial_state.w_items & (1 << index);
+        bool black_exist = initial_state.b_items & (1 << index);
         if (!(white_move && white_exist) && !(!white_move && black_exist)) {
             continue;
         }
-        board_tree_node_t node = generate_item_moves_callback(initial_state, i, verify_move_callback);
+        board_tree_node_t node = generate_item_moves_callback(initial_state, index, verify_move_callback);
         if (node.next_states_status > 0) {
             std::pair<board_t, std::vector<board_t>> items = from_c_tree_node(node);
             r.second.reserve(r.second.size() + items.second.size());
             r.second.insert(r.second.end(), items.second.begin(), items.second.end());
+        } else if (node.next_states_status == BOARD_TREE_STATUS_ERROR) {
+            return {initial_state, BOARD_TREE_STATUS_ERROR, 0};
         }
     }
 
@@ -378,7 +380,7 @@ _generate_all_moves_r(
 )
 {
     if (max_depth == 0) {
-        return new_board_tree_node(initial_state, -1);
+        return new_board_tree_node(initial_state, BOARD_TREE_STATUS_DEPTH);
     }
 
     board_tree_node_t root = _generate_all_moves_lvl(initial_state, white_move, verify_move_callback, generate_item_moves_callback);
@@ -390,7 +392,7 @@ _generate_all_moves_r(
     for (int i = 0; i < root.next_states_status; i++) {
         auto p = stack_map.emplace(root.next_states[i].state, &root.next_states[i]);
         if (!p.second) {
-            root.next_states[i] = new_board_tree_node(root.next_states[i].state, -2);
+            root.next_states[i] = new_board_tree_node(root.next_states[i].state, BOARD_TREE_STATUS_LOOP);
             root.next_states[i].next_states = p.first->second;
             continue;
         }
@@ -427,7 +429,7 @@ _generate_all_moves(
 {
     try {
         if (!generate_item_moves_callback) {
-            return new_board_tree_node(initial_state, -3);
+            return new_board_tree_node(initial_state, BOARD_TREE_STATUS_ERROR);
         }
 
         stack_map_t stack_map;
@@ -436,7 +438,7 @@ _generate_all_moves(
     } catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
 
-        return new_board_tree_node(initial_state, -3);
+        return new_board_tree_node(initial_state, BOARD_TREE_STATUS_ERROR);
     }
 }
 

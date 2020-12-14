@@ -37,17 +37,27 @@ board_t get_initial_board();
 void print_board(board_t b);
 
 
+#define BOARD_TREE_STATUS_DEPTH (-1)
+#define BOARD_TREE_STATUS_LOOP (-2)
+#define BOARD_TREE_STATUS_ERROR (-3)
+
 /**
  * @struct board_tree_node_t
  * @brief Decision tree node.
  * 
  * next_states_status contains the size of next_states array
  * or indicates the reason why there are no next_states
- * next_states_status == 0  - no moves available, one side win
- * next_states_status > 0   - size of next_states array
- * next_states_status == -1 - depth limit
- * next_states_status == -2 - loop detected, next_states points to single node among parent nodes, containing same board state
- * next_states_status == -3 - calculation stopped due to error
+ * 
+ * next_states_status == 0 - no moves available, one side win
+ * 
+ * next_states_status > 0 - size of next_states array
+ * 
+ * next_states_status == BOARD_TREE_STATUS_DEPTH - depth limit
+ * 
+ * next_states_status == BOARD_TREE_STATUS_LOOP - loop detected,
+ * and next_states points to single node among parent nodes, containing same board state
+ * 
+ * next_states_status == BOARD_TREE_STATUS_ERROR - calculation stopped due to error
  */
 typedef struct board_tree_node
 {
@@ -90,7 +100,7 @@ int verify_move(board_t initial_state, unsigned int from, unsigned int to);
  * @brief The function that generates the possible moves for a piece.
  * 
  * @param initial_state Initial board status.
- * @param item The initial piece position.
+ * @param item The initial piece position index.
  * @param verify_move_callback A callable that can determine if a move is valid.
  * 
  * @return Resulting decision tree with max depth=1. 
@@ -98,7 +108,7 @@ int verify_move(board_t initial_state, unsigned int from, unsigned int to);
 board_tree_node_t
 generate_item_moves(
     board_t initial_state,
-    unsigned int item,
+    unsigned int item_index,
     int (*verify_move_callback)(board_t, unsigned int, unsigned int)
 );
 
