@@ -289,7 +289,7 @@ inline std::vector<std::pair<board_2d_t, std::vector<board_2d_t>>> king_multiple
     }
 };
 
-/*
+/* Cell indexing cheat-sheet
     {_, 28, _, 29, _, 30, _, 31},
     {24, _, 25, _, 26, _, 27, _},
     {_, 20, _, 21, _, 22, _, 23},

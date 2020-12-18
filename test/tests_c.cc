@@ -147,7 +147,7 @@ TEST_CASE("validation")
                 for (unsigned int to = 0; to <= 32; to++) {
                     int expected = valid_moves.count({from, to}) > 0 ? 1 : 0;
                     INFO("validation: move: from=" << from << ", to=" << to << ", expected=" << expected);
-                    REQUIRE(verify_move(brd, from, to) == expected);
+                    REQUIRE_EQ(verify_move(brd, from, to), expected);
                 }
             }
         }
